@@ -2,7 +2,7 @@
 
 Files `File` and directories `Dir`:
 
-```
+```agda
 data File : Set where
     file : File
 
@@ -12,7 +12,7 @@ data Dir : Set where
 
 They are all file system objects `FSObj`:
 
-```
+```agda
 data FSObj : Set where
     fromFile : File -> FSObj
     fromDir : Dir -> FSObj
@@ -23,9 +23,9 @@ File systems `FS`:
 record FS : Set where {
     live: List FSObj,
     // live is the collection of contained FSObj
-    root: Dir & live,
+    root: Dir ∩ live,
     // the root must be in the intersection of Dir and live
-    parent: (live - root) -> Dir & live,
+    parent: (live - {root}) -> Dir ∩ live,
     // a function that assigns each live object (except root) a parent
     contents: Dir -> {All subsets of live}
     // a function that assigns each directory with contents
@@ -39,7 +39,9 @@ record FS : Set where {
 }
 ```
 
-Now we have a model of file systems. We define two operations:
+To implement `FS`, I'm thinking about how to represent subsets and removal of an element from a set.
+
+After implementing `FS`, we define two operations:
 
 1. `move`, takes in arguments `a: FS`,  `x` in `a.live`, `d` in `a.live` and `Dir`, and returns a new `FS` with `x` moved into `d`.
 
