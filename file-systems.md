@@ -19,27 +19,31 @@ data FSObj : Set where
 ```
 
 File systems `FS`:
-```
-record FS : Set where {
-    live: List FSObj,
-    // live is the collection of contained FSObj
-    root: Dir ∩ live,
-    // the root must be in the intersection of Dir and live
-    parent: (live - {root}) -> Dir ∩ live,
-    // a function that assigns each live object (except root) a parent
-    contents: Dir -> {All subsets of live}
-    // a function that assigns each directory with contents
-}{
-    // Additional constraints
-    
-    for all x in live, x in root.*contents
-    // all elements of live is reachable from root
-    for all x in (live - {root}), x in parent(x).contents
-    // for all elements of live, it must be in the contents of its parent
-}
-```
+```agda
+record FS : Set where
+  {- File Systems -}
+  field
+    live : List FSObj
+    {- The collection of FSObjs contained in this FS -}
+    root : Dir
+    {- The root of the FS -}
+    root-live : (fromDir root) ∈ live
+    {- The proof that the root is inside live -}
+    parent : (x : FSObj) → x ∈ live → ¬ (x ≡ (fromDir root)) → Dir
+    {- For each x in live that is not root, we assign it a parent. -}
+    parent-live : (x : FSObj) → (lx : x ∈ live) → (nr : ¬ (x ≡ (fromDir root))) → fromDir (parent x lx nr) ∈ live
+    {- The parents assigned must also be inside live -}
+    content : (x : Dir) → (fromDir x) ∈ live → (FSObj → Bool)
+    {- For each directory inside live, we assign them a collection of FSObjs as its content. -}
+    parent-content : (x : FSObj) → (lx : x ∈ live) → (nr : ¬ (x ≡ (fromDir root))) → content (parent x lx nr) (parent-live x lx nr) x ≡ true
+    {- For all elements of live, it must be in the contents of its parent. -}
 
-To implement `FS`, I'm thinking about how to represent subsets and removal of an element from a set.
+    {-
+    reachable-from-root : ?
+    For all elements of live, it must be reachable from root (be root itself, or be in the contents of root, or be in the contents of contents of root, and so on)
+    still thinking of how to implement
+    -}
+```
 
 After implementing `FS`, we define two operations:
 
