@@ -3,41 +3,41 @@ module file-systems where
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; refl; cong; cong-app)
 
-import Data.List using (List; _++_; length; reverse; map; foldr; downFrom)
-import Data.List.Relation.Unary.All using (All; []; _∷_)
-import Data.List.Relation.Unary.Any using (Any; here; there)
-import Data.List.Membership.Propositional using (_∈_)
+open import Data.Bool.Base using (Bool; true)
+open import Data.List using (List; _++_; length; reverse; map; foldr; downFrom)
+open import Data.List.Relation.Unary.All using (All; []; _∷_)
+open import Data.List.Relation.Unary.Any using (Any; here; there)
+open import Data.List.Membership.Propositional using (_∈_)
+open import Data.Maybe.Base using (Maybe; just; nothing)
+open import Data.Product using (_×_; _,_)
+open import Relation.Nullary using (¬_)
 
-data File : Set where
-    file : File
+-- Want to model a "file system" where we declare that it
+-- can contain two kinds of things, files and directories
 
-data Dir : Set where
-    dir : Dir
 
-data FSObj : Set where
-    fromFile : File -> FSObj
-    fromDir : Dir -> FSObj
+data Kind : Set where
+  file : Kind
+  dir : Kind
 
+data FSObj : Kind -> Set where
+  -- a File has a parent, which is a directory
+  File : FSObj dir -> FSObj file
+  -- normal Dir has a parent, and may contain directories and files
+  Dir  : FSObj dir -> List (FSObj dir) -> List (FSObj file) -> FSObj dir
+  RootDir : List (FSObj dir) -> List (FSObj file) -> FSObj dir
+
+parent : (k : Kind) -> FSObj k -> Maybe (FSObj dir)
+parent file (File o) = just o
+parent dir (Dir o _ _) = just o
+parent dir (RootDir _ _) = nothing
+
+-- A file system has a root object
 record FS : Set where
-  {- File Systems -}
   field
-    live : List FSObj
-    {- The collection of FSObjs contained in this FS -}
-    root : Dir
-    {- The root of the FS -}
-    root-live : (fromDir root) ∈ live
-    {- The proof that the root is inside live -}
-    parent : (x : FSObj) → x ∈ live → ¬ (x ≡ (fromDir root)) → Dir
-    {- For each x in live that is not root, we assign it a parent. -}
-    parent-live : (x : FSObj) → (lx : x ∈ live) → (nr : ¬ (x ≡ (fromDir root))) → fromDir (parent x lx nr) ∈ live
-    {- The parents assigned must also be inside live -}
-    content : (x : Dir) → (fromDir x) ∈ live → (FSObj → Bool)
-    {- For each directory inside live, we assign them a collection of FSObjs as its content. -}
-    parent-content : (x : FSObj) → (lx : x ∈ live) → (nr : ¬ (x ≡ (fromDir root))) → content (parent x lx nr) (parent-live x lx nr) x ≡ true
-    {- For all elements of live, it must be in the contents of its parent. -}
+    rootD : FSObj dir
+    root-has-no-parent : parent dir rootD ≡ nothing
 
-    {-
-    reachable-from-root : ?
-    For all elements of live, it must be reachable from root (be root itself, or be in the contents of root, or be in the contents of contents of root, and so on)
-    still thinking of how to implement
-    -}
+contents : FSObj dir -> List (FSObj dir) × List (FSObj file)
+contents (Dir _ d f) = d , f
+contents (RootDir d f) = d , f
