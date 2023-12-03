@@ -49,4 +49,4 @@ data niceDir : (Obj dir) → Set where
 
 -- a file system could then be represented by a root that is a niceDir.
 
-
+-- TODO: implement MOVE and REMOVE
