@@ -55,6 +55,6 @@ data reachable : ∀ {k : Kind} → (x : Obj dir) → (y : Obj k) → Set where
     there : ∀ {k : Kind} → (x : Obj dir) → (y : Obj k) → reachable x (parent y) → reachable x y
 
 -- all objects that is reachable from a niceDir are nice
-fsNice : ∀ {k : Kind} → (x : Obj dir) → niceDir x → (y : Obj k) → reachable x y → nice y
+nice : ∀ {k : Kind} → (x : Obj dir) → niceDir x → (y : Obj k) → reachable x y → nice y
 
 -- TODO: implement MOVE and REMOVE
