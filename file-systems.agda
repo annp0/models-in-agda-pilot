@@ -70,6 +70,33 @@ remove-help {dir xs} {y} (la {z} (evi z∈xs) zRy) = (dir ((remove-help zRy) ∷
 -- Moving a parent to its descendants will break some properties
 move : ∀ {x y z : Obj} → (x ⇒ y) → (x ⇒ z) → isDir z → Obj
 move {x} {y} {z} xRy xRz dz with remove (add⇒ {x} {z} {y} xRz dz)
--- The nothing case should be impossible since add will definitely make a change to the object; but how to let agda see it?
 move {x} {y} {z} xRy xRz dz     | nothing = add xRz dz y
 move {x} {y} {z} xRy xRz dz     | just r = r
+
+merge-maybe : Maybe Obj → Maybe Obj → Maybe Obj
+merge-maybe nothing nothing = nothing
+merge-maybe nothing (just x) = just x
+merge-maybe (just y) nothing = just y
+merge-maybe (just x) (just y) = just x
+
+open import Data.Bool
+
+eq? : (x : Obj) → (y : Obj) → Bool
+eq? file file = true
+eq? (dir _) file = false
+eq? file (dir _) = false
+eq? (dir []) (dir (y ∷ ys)) = false
+eq? (dir (x ∷ xs)) (dir []) = false
+eq? (dir []) (dir []) = true
+eq? (dir (x ∷ xs)) (dir (y ∷ ys)) = (eq? x y) ∧ (eq? (dir xs) (dir ys))  
+
+-- The parent function searches for the parent in a given root 
+
+parent : (x : Obj) → (y : Obj) → Maybe Obj
+parent x file = nothing
+-- Why this fails the termination checking?
+parent x (dir (y ∷ ys)) with eq? x y
+...                        | true = just (dir (x ∷ ys))
+...                        | false = merge-maybe (parent x y) (parent x (dir ys))
+parent x (dir []) = nothing
+ 
