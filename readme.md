@@ -6,5 +6,3 @@ This project aims to showcase software modeling with dependent types (Agda) and 
 - [File System](file-systems.agda), [File System - Example](file-systems-example.agda)
 - [Order System](order-system.agda), [Order System - Example](order-system-example.agda)
 ![The UML diagram of the order system](order-system.webp)
-
----
