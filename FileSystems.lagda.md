@@ -1,4 +1,5 @@
-module file-systems where
+```
+module FileSystems where
 
 open import Data.List using (List; _++_; foldr; []; _∷_)
 open import Data.Maybe using (Maybe; just; nothing)
@@ -99,4 +100,4 @@ parent x (dir (y ∷ ys)) with eq? x y
 ...                        | true = just (dir (x ∷ ys))
 ...                        | false = merge-maybe (parent x y) (parent x (dir ys))
 parent x (dir []) = nothing
- 
+```
