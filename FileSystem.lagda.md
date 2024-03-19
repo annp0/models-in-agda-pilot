@@ -1,5 +1,5 @@
 ```
-module FileSystems where
+module FileSystem where
 
 open import Data.List using (List; _++_; foldr; []; _∷_)
 open import Data.Maybe using (Maybe; just; nothing)
