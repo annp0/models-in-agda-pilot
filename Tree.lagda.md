@@ -1,4 +1,6 @@
 ```
+{-# OPTIONS --guardedness #-}
+
 module Tree where
 
 open import Data.Nat
@@ -6,6 +8,11 @@ open import Data.Bool
 open import Data.List
 open import Relation.Binary.PropositionalEquality
 open import Relation.Nullary
+open import Data.Product
+
+open import Interface
+
+open Interface.Interface
 ```
 
 # Trees
@@ -20,27 +27,71 @@ data Tree : Set where
     node : ℕ → List Tree → Tree
 ```
 
-The function `eq?` compares two integers.
+`intree?` checks whether an integer is already present in a tree.
 
 ```
-eq? : ℕ → ℕ → Bool
-eq? zero zero = true
-eq? zero (suc _) = false
-eq? (suc _) zero = false
-eq? (suc m) (suc n) = eq? m n
+intree? : ℕ → Tree → Bool
+intree-children? : ℕ → List Tree → Bool
+
+intree? m (leaf n) = eq? m n
+intree? m (node n ns) = eq? m n ∨ intree-children? n ns
+
+intree-children? m [] = false
+intree-children? m (n ∷ ns) = intree? m n ∨ intree-children? m ns
+
+intree-help : Tree → Tree → Bool
+intree-help (leaf m) t = intree? m t
+intree-help (node m _) t = intree? m t
 ```
 
-`in?` checks whether an integer is already present in a tree.
+-- need to add comments
+
+-- current issues: 
+1. agda cannot see some impossible cases
+2. need a better type for `remtree-help`, it shouldn't be the same as the parent function 
 
 ```
-in? : ℕ → Tree → Bool
-in-children? : ℕ → List Tree → Bool
+data TreeQs : Set where
+    addQ : Tree → ℕ → TreeQs
+    remQ : ℕ → TreeQs
+    read : TreeQs
+    movQ : ℕ → ℕ → TreeQs
 
-in? m (leaf n) = eq? m n
-in? m (node n ns) = eq? m n ∨ in-children? n ns
+TreeI : Interface
+TreeI .Question = TreeQs
+TreeI .Answer (addQ _ _) = Status 
+TreeI .Answer (remQ _) = Status
+TreeI .Answer (movQ _ _) = Status
+TreeI .Answer (read) = Tree
 
-in-children? m [] = false
-in-children? m (n ∷ ns) = in? m n ∨ in-children? m ns
+addtree : Tree → ℕ → Tree → Status × Tree
+addtree-help : Tree → ℕ → Tree → Status × Tree
+addtree-children : Tree → ℕ → List Tree → Status × Tree
+
+addtree nt n t with intree-help nt t
+...                     | true = (failure , t)
+...                     | false with intree? n t
+...                                | false = (failure , t)
+...                                | true = addtree-help nt n t
+
+addtree-help nt m (node n ns) with eq? m n
+...                              | false = addtree-children nt m ns
+...                              | true = (success , node n (nt ∷ ns))
+addtree-help nt m (leaf n) = (failure , leaf n)
+
+addtree-children nt m (n ∷ ns) with (addtree-help nt m n)
+...                               | (success , t) = (success , t)
+...                               | (failure , _) = (addtree-children nt m ns)
+
+addtree-children nt m [] = (failure , nt)
+
+remtree : ℕ → Tree → Status × Tree
+remtree-children : ℕ → List Tree → Status × Tree
+
+remtree n t with intree? n t
+...            | false = (failure , t)
+...            | true = (success , )
+remtree-help : ℕ → Tree → Status × Tree 
 ```
 
 -- Todo: implement with interfaces
@@ -83,12 +134,10 @@ tree-unique (children (there (here leaf))) (children (there (here leaf))) = refl
 leaf-unique : ∀ n → is-uniquely-indexed (leaf n)
 leaf-unique n leaf leaf = refl
 
+```
 
-children-unique 
-  : ∀ n ns → children-uniquely-indexed ns 
-  → {!   !}
- → is-uniquely-indexed (node n ns)
 
+```plain
 []-unique : children-uniquely-indexed [] 
 []-unique ()
 
