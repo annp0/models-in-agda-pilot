@@ -1,4 +1,4 @@
-```
+```agda
 {-# OPTIONS --guardedness #-}
 module Interface where
 
@@ -24,7 +24,7 @@ Experiments with interfaces
 An interface defines the range of questions you can ask and 
 the range of answers you would expect for each question.
 
-```
+```agda
 record Interface : Set₁ where
     field
         Question : Set
@@ -35,7 +35,7 @@ open Interface
 
 ⊗ lets you construct a new interface by asking two questions and expecting two answers.
 
-```
+```agda
 _⊗_ : Interface → Interface → Interface
 (I ⊗ J) .Question = I .Question × J .Question
 (I ⊗ J) .Answer (i , j) = I .Answer i × J .Answer j
@@ -44,7 +44,7 @@ _⊗_ : Interface → Interface → Interface
 
 ⊕ is similar.
 
-```
+```agda
 _⊕_ : Interface → Interface → Interface
 (I ⊕ J) .Question = I .Question ⊎ J .Question
 (I ⊕ J) .Answer (inj₁ i) = I .Answer i
@@ -53,7 +53,7 @@ _⊕_ : Interface → Interface → Interface
 
 ♭ lets you construct an interface by asking two questions in a sequence.
 
-```
+```agda
 _♭_ : Interface → Interface → Interface
 (I ♭ J) .Question = Σ[ i ∈ I .Question ] (I .Answer i → J .Question)
 (I ♭ J) .Answer (i , next) = Σ[ i' ∈ I .Answer i ] (J .Answer (next i'))
@@ -61,7 +61,7 @@ _♭_ : Interface → Interface → Interface
 
 ⇒ is the morphism between interfaces.
 
-```
+```agda
 record _⇒_ (P Q : Interface) : Set where
     field
         ask : P .Question → Q .Question
@@ -73,7 +73,7 @@ open _⇒_
 An object can be called with a question, it will answer the question and return 
 a new object with possible state change
 
-```
+```agda
 record Object (I : Interface) : Set where
     coinductive
     field
@@ -84,7 +84,7 @@ open Object
 
 The following is just for storing answers and getting the sequence started.
 
-```
+```agda
 data Answers (I : Interface) : List (I .Question) → Set where
     [] : Answers I []
     _∷_ : ∀ {q : I .Question} {qs : List (I .Question)} → I .Answer q → Answers I qs → Answers I (q ∷ qs)
@@ -94,9 +94,9 @@ observe [] obj = []
 observe (q ∷ qs) obj = let (answer , obj') = (obj .call q) in answer ∷ (observe qs obj')
 ```
 
-# Example
+# Example: A simple counter
 
-```
+```agda
 data CounterInstr : Set where
     incr : CounterInstr
     decr : CounterInstr
@@ -125,9 +125,9 @@ The normalizing form of test should be `success ∷ (success ∷ (success ∷ (1
 
 # Example : Non-Repeating Lists
 
-How I implement non-repeating lists (sequences) as interfaces.
+This example implements non-repeating lists (sequences) as interfaces.
 
-```
+```agda
 data Seq : Set where
     nil : Seq
     con : ℕ → Seq → Seq
@@ -151,7 +151,7 @@ is already present in the sequence
 is not present in the sequence
 - `read`: read out the sequence
 
-```
+```agda
 eq? : ℕ → ℕ → Bool
 eq? zero zero = true
 eq? zero (suc _) = false
@@ -168,7 +168,7 @@ in? m (con n ns) with eq? m n
 `eq?` compares two integers, while `in?` judges whether a number
 is present in a sequence
 
-```
+```agda
 add : ℕ → Seq → Status × Seq
 add n s = if (in? n s) then (failure , s) else (success , (con n s))
 
@@ -188,7 +188,7 @@ seq s .call (read) = (s , seq s)
 `add` and `remove` performs the actual task and wraps the status and value together.
 This simplified the implementation of the object function.
 
-```
+```agda
 testSeq : Answers _ _
 testSeq = observe ((addQ 1) ∷ (addQ 3) ∷ (addQ 4) ∷ (remQ 2) ∷ (addQ 3) ∷ (remQ 1) ∷ (read) ∷ []) (seq nil)
 ```
