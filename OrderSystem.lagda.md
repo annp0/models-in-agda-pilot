@@ -3,11 +3,17 @@ module OrderSystem where
 
 open import Data.Float 
 open import Data.String using (String)
-open import Data.List using (List; []; _∷_; foldr)
+open import Data.List using (List; []; _∷_; foldr; filter)
 open import Data.List.NonEmpty using (List⁺)
 open import Data.Bool
 open import Data.Product
 open import Data.Nat using (ℕ; compare; Ordering; equal)
+
+open import Relation.Nullary
+open import Relation.Binary.PropositionalEquality
+
+import Data.Nat as Nat
+import Data.Nat.Properties as Natₚ
 ```
 
 # OrderSystem
@@ -36,6 +42,7 @@ record Cash : Set
 record Credit : Set
 
 record Customer where
+    eta-equality
     field
         id : ℕ
 
@@ -64,22 +71,49 @@ record Credit where
         amount : Float
 ```
 
-We can query the orders of a customer from a list of orders (`query`).
-
-First, we need to establish the notion of equality on customers, by
-comparing their ID.
+For customers, we need to define equality for them.
 
 ```agda
-compare-customer : Customer → Customer → Bool
-compare-customer c1 c2 with (compare (Customer.id c1) (Customer.id c2)) 
-...                        | (equal _) = true
-...                        |  _        = false
+-- posible with eta-equality
+customer-equal
+  : ∀ {x y : Customer} 
+  → Customer.id x ≡ Customer.id y 
+  → x ≡ y
+customer-equal refl = refl
 
+-- a quick way of getting boolean values
+customer-equal? : ∀ (x y : Customer) → Bool
+customer-equal? x y = Customer.id x Nat.≡ᵇ Customer.id y
+
+-- extract proof from the boolean result (true)
+reflect-≡ᵇ : ∀ (x y : ℕ) → (x Nat.≡ᵇ y) ≡ true → x ≡ y
+reflect-≡ᵇ Nat.zero Nat.zero p = refl
+reflect-≡ᵇ (Nat.suc x) (Nat.suc y) p = cong Nat.suc (reflect-≡ᵇ x y p)
+
+-- extract proof from the boolean result (false)
+refute-≡ᵇ : ∀ (x y : ℕ) → (x Nat.≡ᵇ y) ≡ false → ¬ (x ≡ y)
+refute-≡ᵇ Nat.zero Nat.zero () q
+refute-≡ᵇ (Nat.suc x) (Nat.suc y) p q = 
+    refute-≡ᵇ x y p (Natₚ.suc-injective q)
+
+customer-equal-reflects 
+  : ∀ (x y : Customer) 
+  → Reflects (x ≡ y) (customer-equal? x y)
+customer-equal-reflects x y with customer-equal? x y in p
+    -- if false, give the proof that x≠y
+... | false = ofⁿ (λ x=y → refute-≡ᵇ (Customer.id x) (Customer.id y) p (cong Customer.id x=y))
+    -- if true, give the proof that x=y
+... | true = ofʸ (customer-equal (reflect-≡ᵇ _ _ p))
+
+customer-equal-dec : ∀ (x y : Customer) → Dec (x ≡ y)
+customer-equal-dec x y = customer-equal? x y because customer-equal-reflects x y
+```
+
+We can query the orders of a customer from a list of orders (`query`).
+
+```agda
 query : List Order → Customer → List Order
-query [] _ = []
-query (o ∷ os) c = if compare-customer (Order.customer o) c 
-                   then o ∷ (query os c) 
-                   else (query os c)  
+query os c = filter (λ o → customer-equal-dec (Order.customer o) c) os 
 ```
 
 Payment could be formed from `Cash` or `Credit`.
@@ -95,6 +129,7 @@ cred2pay credit = record {amount = (Credit.amount credit)}
 To calculate the total cost for an order:
 
 ```agda
+-- handwrite this seemed more convenient than using stdlib
 sum⁺ : List⁺ Item → Float
 sum⁺ l⁺ = (Item.cost (List⁺.head l⁺)) + (foldr (λ item float → ((Item.cost item) + float))
                                        0.0 (List⁺.tail l⁺))
@@ -122,25 +157,18 @@ record IsOrder (A : Set) : Set where
         payments : A → List⁺ Payment
 ```
 
-`Listᵒ` is for storing a list of data that have the `IsOrder` predicate.
-Since we are quantifying over all the sets, it needs to be `Set₁`.
-
-Also we need store the data with the evidence that it is an order.
+The type for a list of order is now
 
 ```agda
-data Listᵒ : Set₁ where
-    nil : Listᵒ
-    con : ∀ {A : Set} → A × IsOrder A → Listᵒ → Listᵒ
+Listᵒ : Set₁
+Listᵒ = List (Σ Set (λ A → A × IsOrder A))
 ```
-
 For querying the orders that a customer has from a list
 
 ```agda
 queryᵒ : Listᵒ → Customer → Listᵒ
-queryᵒ nil c = nil
-queryᵒ (con (a , eva) os) c = if (compare-customer c ((IsOrder.owner eva) a))
-                              then con (a , eva) (queryᵒ os c)
-                              else (queryᵒ os c) 
+queryᵒ os c = filter (λ (_ , (a , eva)) → 
+            customer-equal-dec c ((IsOrder.owner eva) a)) os
 ```
 
 For computing the cost of an order
