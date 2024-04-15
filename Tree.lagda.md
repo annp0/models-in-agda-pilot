@@ -1,104 +1,73 @@
-```
+```agda
 {-# OPTIONS --guardedness #-}
 
 module Tree where
 
-open import Data.Nat
-open import Data.Bool
 open import Data.List
-open import Relation.Binary.PropositionalEquality
-open import Relation.Nullary
-open import Data.Product
 ```
 
 # Trees
 
 To model file systems, I think it will be better to start directly with trees.
 
-The nodes of the tree is indexed by integers.
+Specifications:
 
-```
-data Tree : Set where
-    leaf : ℕ → Tree
-    node : ℕ → List Tree → Tree
-```
+1. Each node has a list of children
+2. There is an `add` operation which takes in a path and a tree, 
+add that tree to the node that the path points to. Will fail if the path points 
+to a leaf.
+3. There is a `remove` operation which takes in a path and a tree, and remove the 
+leaf / node the path points to. 
 
-The problem is that we want them to be **uniquely** indexed by integers.
-
-# An approach with evidences
-
-```
--- _∈ᵗ_ is the evidence that a number is in the tree
--- _∈ᶜ_ is the evidence that a number is in a list of trees
-
-data _∈ᵗ_ (n : ℕ) : Tree → Set
-data _∈ᶜ_ (n : ℕ) : List Tree → Set
-
-data _∈ᶜ_ n where
-    here : ∀ {t ts} → n ∈ᵗ t → n ∈ᶜ (t ∷ ts) 
-    there : ∀ {t ts} → n ∈ᶜ ts → n ∈ᶜ (t ∷ ts) 
-
-data _∈ᵗ_ n where
-    leaf : n ∈ᵗ leaf n
-    node : ∀ {ns} → n ∈ᵗ node n ns
-    children : ∀ {m ns} → n ∈ᶜ ns → n ∈ᵗ node m ns
-```
-
-Now being uniquely indexed is equivalent to the fact that
-for every number in the tree, the evidence is unique.
-
-```
-is-uniquely-indexed : Tree → Set
-is-uniquely-indexed t = ∀ {n} → (i j : n ∈ᵗ t) → i ≡ j
-```
-
-This is saying that a list of trees is uniquely indexed.
-Might come in handy later.
-
-```
-children-uniquely-indexed : List Tree → Set
-children-uniquely-indexed ts = ∀ {t} → (i j : t ∈ᶜ ts) → i ≡ j
-```
-
-Obviously a leaf and an empty list is uniquely indexed.
-
-```
-leaf-unique : ∀ n → is-uniquely-indexed (leaf n)
-leaf-unique n leaf leaf = refl
-
-[]-unique : children-uniquely-indexed [] 
-[]-unique ()
-```
-
-An example showcasing a small tree and proving its unique index property.
-
-```
-tree : Tree
-tree = node 1 (leaf 2 ∷ leaf 3 ∷ [])
-
-tree-unique : is-uniquely-indexed tree
-tree-unique node node = refl
-tree-unique node (children (there (here ())))
-tree-unique node (children (there (there ())))
-tree-unique (children (there (here ()))) node
-tree-unique (children (there (there ()))) node
-tree-unique (children (here leaf)) (children (here leaf)) = cong children refl
-tree-unique (children (here leaf)) (children (there (here ())))
-tree-unique (children (here leaf)) (children (there (there ())))
-tree-unique (children (there (here leaf))) (children (there (here leaf))) = cong children refl
-
-```
-The goal: a decidable algorithm
+For specification 1:
 
 ```agda
-unique? : ∀ t → Dec (is-uniquely-indexed t)
-unique-children? : ∀ ts → Dec (children-uniquely-indexed ts)
+data Tree : Set where
+    leaf : Tree
+    node : List Tree → Tree
 
-unique? (leaf n) = yes (leaf-unique n)
-unique? (node n ns) with unique-children? ns
-... | yes p = {!   !}
-... | no p = {!   !}
+-- Membership relation (the one comes from stdlib is not easy to use)
+data _∈_ : Tree → List Tree → Set where
+    here : ∀ {x : Tree} {xs : List Tree} → x ∈ (x ∷ xs)
+    there : ∀ {x y : Tree} {xs : List Tree} → x ∈ xs → x ∈ (y ∷ xs)
 
-unique-children? [] = yes []-unique
-unique-children? (x ∷ ns) = {!   !}
+-- y ∈ᶜ x if y is a child of x
+data _∈ᶜ_ : Tree → Tree → Set where
+    inᶜ : ∀ {t : Tree} {ts : List Tree} 
+                 → (t ∈ ts) → t ∈ᶜ (node ts)
+
+-- x ⇒ y records the path from x to y
+data _⇒_ : Tree → Tree → Set where
+    self : ∀ {t : Tree} → t ⇒ t
+    child : ∀ {x y : Tree} → y ∈ᶜ x → x ⇒ y
+    trans : ∀ {y x z : Tree} → y ∈ᶜ x → y ⇒ z → x ⇒ z
+
+-- isnode x can only be formed when x is a node
+data isnode : Tree → Set where
+    fromnode : ∀ {xs : List Tree} → isnode (node xs)
+```
+
+For specification 2: (the operation `add`)
+
+```agda
+-- filterⁱ removes a member of a list, given the proof of membership
+filterⁱ : (xs : List Tree) → (x : Tree) → (x ∈ xs) → List Tree
+filterⁱ (x ∷ xs) y here = xs
+filterⁱ (x ∷ xs) y (there y∈xs) = x ∷ (filterⁱ xs y y∈xs) 
+
+-- addᵗ adds a tree to a node (specified by a path)
+addᵗ : ∀ {x y : Tree} → (x ⇒ y) → isnode y → Tree → Tree
+addᵗ {x} {y} self (fromnode {xs}) z = node (z ∷ xs)
+addᵗ {node xs} {y} (child (inᶜ y∈xs)) isnode-y z = 
+    node ((addᵗ (self {y}) isnode-y z) ∷ (filterⁱ xs y y∈xs))
+addᵗ {node xs} {z} (trans {y} (inᶜ y∈xs) yRz) isnode-z a = node ((addᵗ yRz isnode-z a) ∷ filterⁱ xs y y∈xs)
+
+-- the added element now has a path
+addᵗ-⇒ : ∀ {x y z : Tree} → (xRy : x ⇒ y) → (isnode-y : isnode y) → 
+        (addᵗ xRy isnode-y z) ⇒ z
+addᵗ-⇒ {x} {x} {z} (self) (fromnode {xs}) = child (inᶜ (here {z} {xs}))
+addᵗ-⇒ {node xs} {y} {z} (child (inᶜ y∈xs)) isnode-y = 
+        trans (inᶜ here) (addᵗ-⇒ self isnode-y)
+addᵗ-⇒ {node xs} {z} {a} (trans {y} (inᶜ y∈xs) yRz) (isnode-z) = 
+        trans (inᶜ here) (addᵗ-⇒ yRz isnode-z)
 ```
