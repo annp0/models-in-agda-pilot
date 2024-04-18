@@ -4,6 +4,7 @@
 module Tree where
 
 open import Data.List
+open import Data.Maybe
 ```
 
 # Trees
@@ -47,27 +48,41 @@ data isnode : Tree → Set where
     fromnode : ∀ {xs : List Tree} → isnode (node xs)
 ```
 
-For specification 2: (the operation `add`)
+For specification 2: (the `add` operation)
 
 ```agda
 -- filterⁱ removes a member of a list, given the proof of membership
-filterⁱ : (xs : List Tree) → (x : Tree) → (x ∈ xs) → List Tree
-filterⁱ (x ∷ xs) y here = xs
-filterⁱ (x ∷ xs) y (there y∈xs) = x ∷ (filterⁱ xs y y∈xs) 
+filterⁱ : ∀ {xs : List Tree} {x : Tree} → (x ∈ xs) → List Tree
+filterⁱ {x ∷ xs} {y} here = xs
+filterⁱ {x ∷ xs} {y} (there y∈xs) = x ∷ (filterⁱ {xs} {y} y∈xs) 
 
 -- addᵗ adds a tree to a node (specified by a path)
 addᵗ : ∀ {x y : Tree} → (x ⇒ y) → isnode y → Tree → Tree
 addᵗ {x} {y} self (fromnode {xs}) z = node (z ∷ xs)
 addᵗ {node xs} {y} (child (inᶜ y∈xs)) isnode-y z = 
-    node ((addᵗ (self {y}) isnode-y z) ∷ (filterⁱ xs y y∈xs))
-addᵗ {node xs} {z} (trans {y} (inᶜ y∈xs) yRz) isnode-z a = node ((addᵗ yRz isnode-z a) ∷ filterⁱ xs y y∈xs)
+    node ((addᵗ (self {y}) isnode-y z) ∷ (filterⁱ y∈xs))
+addᵗ {node xs} {z} (trans {y} (inᶜ y∈xs) y⇒z) isnode-z a = 
+    node ((addᵗ y⇒z isnode-z a) ∷ filterⁱ y∈xs)
 
 -- the added element now has a path
-addᵗ-⇒ : ∀ {x y z : Tree} → (xRy : x ⇒ y) → (isnode-y : isnode y) → 
-        (addᵗ xRy isnode-y z) ⇒ z
+addᵗ-⇒ : ∀ {x y z : Tree} → (x⇒y : x ⇒ y) → (isnode-y : isnode y) → 
+        (addᵗ x⇒y isnode-y z) ⇒ z
 addᵗ-⇒ {x} {x} {z} (self) (fromnode {xs}) = child (inᶜ (here {z} {xs}))
 addᵗ-⇒ {node xs} {y} {z} (child (inᶜ y∈xs)) isnode-y = 
         trans (inᶜ here) (addᵗ-⇒ self isnode-y)
-addᵗ-⇒ {node xs} {z} {a} (trans {y} (inᶜ y∈xs) yRz) (isnode-z) = 
-        trans (inᶜ here) (addᵗ-⇒ yRz isnode-z)
+addᵗ-⇒ {node xs} {z} {a} (trans {y} (inᶜ y∈xs) y⇒z) (isnode-z) = 
+        trans (inᶜ here) (addᵗ-⇒ y⇒z isnode-z)
+```
+
+For specification 3: (the `remove` operation)
+
+```agda
+remᵗ : ∀ {x y : Tree} → x ⇒ y → Maybe Tree
+-- if we remove the root, we get nothing
+remᵗ self = nothing
+remᵗ {node xs} {y} (child (inᶜ y∈xs)) = just (node (filterⁱ y∈xs))
+remᵗ {node xs} {z} (trans {y} (inᶜ y∈xs) y⇒z) 
+    with remᵗ y⇒z
+...    | nothing = just (node (filterⁱ y∈xs))
+...    | just y′ = just (node (y′ ∷ filterⁱ y∈xs))
 ```
