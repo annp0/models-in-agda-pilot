@@ -18,11 +18,13 @@ import Data.Nat.Properties as Natₚ
 
 # OrderSystem
 
+## Informal Specification
+
 An order system consists of the following classes:
 
 - `Order`, which stores the status of the order, 
-    a list of `Item`s contained in the `Order`,
-    and a list of `Payment`s.
+    a non-empty list of `Item`s contained in the `Order`,
+    and a non-empty list of `Payment`s.
     It must be owned by a `Customer`.
     It has a method to calculate the total cost of the order.
 - `Customer`, which has a name, and could have multiple orders.
@@ -31,44 +33,56 @@ An order system consists of the following classes:
     It stores the amount of the payment.
     It must be owned by an `Order`.
 
+## By-signature Specification
+
+- `Customer : Set` should be a record with a single field `id : ℕ`
+- `Cash : Set` and `Credit : Set` should be a record containing
+    a field `amount : Float` and other status information 
+- `Payment : Set` a record that contains a single field `amount : Float`
+    can be formed from `Cash` or `Credit` by respective functions
+    `cash2Pay : Cash → Payment` and `cred2Pay : Credit → Payment`
+- `Order : Set` should be a record with the following fields:
+    a non-empty list of items `items : List⁺ Item`
+    a non-empty list of payments `payments : List⁺ Payment`
+    a customer `Customer`
+    the current `Status : Set`
+    and a function that returns its total cost `cost : Order → Float`
+
 # The approach with specific data types
 
 ```agda
-record Payment : Set
-record Order : Set
-record Customer : Set
-record Item : Set
-record Cash : Set
-record Credit : Set
+data Status : Set where
+    success : Status
+    failure : Status
 
-record Customer where
+record Customer : Set where
     eta-equality
     field
         id : ℕ
 
-record Order where
-    field
-        status : String
-        customer : Customer
-        items : List⁺ Item 
-        payments : List⁺ Payment 
-
-record Item where
+record Item : Set where
     field
         name : String
         cost : Float
 
-record Payment where
+record Payment : Set where
     field
         amount : Float
 
-record Cash where
+record Cash : Set where
     field
         amount : Float
 
-record Credit where
+record Credit : Set where
     field
         amount : Float
+
+record Order : Set where
+    field
+        status : Status
+        customer : Customer
+        items : List⁺ Item 
+        payments : List⁺ Payment 
 ```
 
 For customers, we need to define equality for them.
@@ -145,10 +159,6 @@ and to see them as orders, we would need to implement the functions
 as stated in the record `IsOrder`.
 
 ```agda
-data Status : Set where
-    success : Status
-    failure : Status
-
 record IsOrder (A : Set) : Set where
     field
         status : A → Status
@@ -176,4 +186,4 @@ For computing the cost of an order
 ```agda
 costᵒ : ∀ {A : Set} → A → IsOrder A → Float
 costᵒ a eva = sum⁺ ((IsOrder.items eva) a)
-```
+``` 
