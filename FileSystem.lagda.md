@@ -12,6 +12,7 @@ open import Data.Unit using (⊤; tt)
 open import Function using (_∘_)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl; _≢_; cong)
 open import Relation.Nullary using (¬_)
+open import Data.Bool
 ```
 
 # Trees
@@ -62,7 +63,7 @@ record StaticFileSystem (Directory : Set) (File : Set) : Set₁ where
     d-rootpath : Directory → RootPath
     f-rootpath : File → RootPath
 
-    is-in : FSItem → Set
+    is-in : FSItem → Bool
     
   rootpath : FSItem → RootPath
   rootpath (inj₁ f) = f-rootpath f
@@ -95,7 +96,7 @@ module _ {D F : Set} (fs : StaticFileSystem D F) where
 
 ```
 
-```agda
+```
 record FileSystem : Set₁ where
   open StaticFileSystem
   open ValidFSItem
@@ -112,14 +113,90 @@ record FileSystem : Set₁ where
 
     add-coherent : {D F : Set} (fs : StaticFileSystem D F) →
       (i : ValidFSItem fs) →
-      is-in (add fs i) (item i)
+      is-in (add fs i) (item i) ≡ true
 
     remove : {D F : Set} (fs : StaticFileSystem D F) → (i : ValidFSItem fs) →
-      is-in fs (item i) →
+      is-in fs (item i) ≡ true →
       StaticFileSystem D F
 
     remove-coherent : {D F : Set} (fs : StaticFileSystem D F) →
       (i : ValidFSItem fs) →
-      (isin : is-in fs (item i)) →
-      ¬ is-in (remove fs i isin) (item i)
+      (isin : is-in fs (item i) ≡ true) →
+      is-in (remove fs i isin) (item i) ≡ false 
+```
+
+## Toy Example 1
+
+```plaintext
+      da
+    /    \
+  fa      db
+         /
+        fb
+```
+
+```agda
+data F : Set where
+  fa : F
+  fb : F
+
+data D : Set where
+  da : D
+  db : D
+
+fp : F → ParentOrRoot D
+fp fa = Parent da
+fp fb = Parent db
+
+dp : D → ParentOrRoot D
+dp da = Root
+dp db = Parent da
+
+r : D
+r = da
+
+rir : dp da ≡ Root
+rir = refl
+
+ru : ∀ d → dp d ≡ Root → d ≡ r
+ru da x = refl
+ru db () 
+
+RP : Set
+RP = List⁺ D
+
+FI : Set
+FI = F ⊎ D
+
+dr : D → RP
+dr da = da ∷ []
+dr db = da ∷ db ∷ []
+
+fr : F → RP
+fr fa = da ∷ []
+fr fb = da ∷ db ∷ []
+
+ii : F ⊎ D → Bool
+ii (inj₁ fa) = true
+ii (inj₁ fb) = false
+ii (inj₂ da) = true
+ii (inj₂ db) = true 
+
+sfs : StaticFileSystem D F
+sfs = record { f-parent = fp
+  ; d-parent = dp
+  ; root = r
+  ; root-is-root = rir
+  ; root-unique = ru
+  ; d-rootpath = dr
+  ; f-rootpath = fr
+  ; is-in = ii
+  }
+
+vfsda : ValidFSItem sfs
+vfsda = record { item = (inj₂ da) 
+  ; valid = refl
+  }
+
+
 ```
