@@ -132,29 +132,40 @@ get-set-other-help  : ∀ {y z a a′ : TreeShape} {xs : List TreeShape}
                     ≡ valid? (get a′⇒z (get-list a′∈xs txs))
 get-set-prop-other {.leaf} {.leaf} {.leaf} {self} {self} {leaf x} {b} x₁ 
     = ⊥-elim (x₁ refl)
-get-set-prop-other {.(node _)} {.(node _)} {.(node _)} {self} {self} {node x x₂} {b} x₁ 
+get-set-prop-other {.(node _)} {.(node _)} {.(node _)} {self} {self} 
+    {node x x₂} {b} x₁ 
     = ⊥-elim (x₁ refl)
-get-set-prop-other {.(node _)} {.(node _)} {z} {self} {tran {y} (child x₃) y⇒z} {node x x₂} {b} x₁ 
+get-set-prop-other {.(node _)} {.(node _)} {z} {self} 
+    {tran {y} (child x₃) y⇒z} {node x x₂} {b} x₁ 
     = refl
-get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))} {tran {a} (child here) a⇒y} {self} {node x₂ x₃} {b} x₁ 
+get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))} 
+    {tran {a} (child here) a⇒y} {self} {node x₂ x₃} {b} x₁ 
     = refl
-get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} {tran {a} (child (there a∈xs)) a⇒y} {self} {node x₂ x₃} {b} x₁ 
+get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} 
+    {tran {a} (child (there a∈xs)) a⇒y} {self} {node x₂ x₃} {b} x₁ 
     = refl
-get-set-prop-other {x@(node xs@(_ ∷ _))} {y} {z} {tran {a} (child a∈xs) a⇒y} {tran {a′} (child a′∈xs) a′⇒z} {node b′ txs} {b} x₁ 
+get-set-prop-other {x@(node xs@(_ ∷ _))} {y} {z} 
+    {tran {a} (child a∈xs) a⇒y} {tran {a′} (child a′∈xs) a′⇒z} 
+    {node b′ txs} {b} x₁ 
     = help 
     where 
         help : _ 
-        help = get-set-other-help {y} {z} {a} {a′} {xs} {txs} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
-get-set-other-help {y} {z} {a} {.a} {.(a ∷ _)} {x₂ ∷ x₃} {a⇒z} {a⇒y} {here} {here} {b} x = 
-    get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₂} x₄
+        help = get-set-other-help {y} {z} {a} {a′} {xs} {txs} 
+            {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
+get-set-other-help {y} {z} {a} {.a} {.(a ∷ _)} {x₂ ∷ x₃} 
+    {a⇒z} {a⇒y} {here} {here} {b} x 
+    = get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₂} x₄
     where
         x₄ : a⇒y ≢ᵖ a⇒z
         x₄ refl = x refl
-get-set-other-help {y} {z} {a} {a′} {.(a′ ∷ _)} {x₂ ∷ x₃} {a′⇒z} {a⇒y} {here} {there a∈xs} {b} x 
+get-set-other-help {y} {z} {a} {a′} {.(a′ ∷ _)} {x₂ ∷ x₃} 
+    {a′⇒z} {a⇒y} {here} {there a∈xs} {b} x 
     = refl
-get-set-other-help {y} {z} {a} {a′} {.(a ∷ _)} {x₂ ∷ x₃} {a′⇒z} {a⇒y} {there a′∈xs} {here} {b} x 
+get-set-other-help {y} {z} {a} {a′} {.(a ∷ _)} {x₂ ∷ x₃} 
+    {a′⇒z} {a⇒y} {there a′∈xs} {here} {b} x 
     = refl
-get-set-other-help {y} {z} {a} {a′} {(_ ∷ xs)} {x₂ ∷ x₃} {a′⇒z} {a⇒y} {there a′∈xs} {there a∈xs} {b} x 
+get-set-other-help {y} {z} {a} {a′} {(_ ∷ xs)} {x₂ ∷ x₃} 
+    {a′⇒z} {a⇒y} {there a′∈xs} {there a∈xs} {b} x 
     = get-set-other-help {y} {z} {a} {a′} {xs} {x₃} x₄
     where
         x₄ : tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
