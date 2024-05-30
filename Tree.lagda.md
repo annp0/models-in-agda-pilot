@@ -2,7 +2,9 @@
 open import Data.Bool
 open import Data.List
 open import Data.Product
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; _≢_; cong)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong)
+open import Relation.Nullary using (¬_)
+open import Data.Empty
 ```
 
 # The Rose-tree approach, with all paths already given 
@@ -112,6 +114,52 @@ get-set-prop-help {y} {z} {y⇒z} {.(y ∷ _)} {ty ∷ txs} {here} {b}          
 get-set-prop-help {y} {z} {y⇒z} {x ∷ xs} {tx ∷ txs} {there y∈xs} {b}        =
     get-set-prop-help {y} {z} {y⇒z} {xs} {txs} {y∈xs} {b}
 
+data _≡ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set where
+    refl : ∀ {x y : TreeShape} {x⇒y : x ⇒ y} → x⇒y ≡ᵖ x⇒y 
+
+_≢ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set
+x⇒y ≢ᵖ x⇒z = ¬ (x⇒y ≡ᵖ x⇒z) 
+
+get-set-prop-other  : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
+                    {b : Bool} → x⇒y ≢ᵖ x⇒z
+                    → get-valid? x⇒z (get-set x⇒y tx b) 
+                    ≡ get-valid? x⇒z tx 
+get-set-other-help  : ∀ {y z a a′ : TreeShape} {xs : List TreeShape} 
+                    {txs : TreeList xs} {a′⇒z : a′ ⇒ z} {a⇒y : a ⇒ y} 
+                    {a′∈xs : a′ ∈ xs} {a∈xs : a ∈ xs} {b : Bool}
+                    →  tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
+                    → valid? (get a′⇒z (get-list a′∈xs (get-set-help a∈xs a⇒y txs b)))
+                    ≡ valid? (get a′⇒z (get-list a′∈xs txs))
+get-set-prop-other {.leaf} {.leaf} {.leaf} {self} {self} {leaf x} {b} x₁ 
+    = ⊥-elim (x₁ refl)
+get-set-prop-other {.(node _)} {.(node _)} {.(node _)} {self} {self} {node x x₂} {b} x₁ 
+    = ⊥-elim (x₁ refl)
+get-set-prop-other {.(node _)} {.(node _)} {z} {self} {tran {y} (child x₃) y⇒z} {node x x₂} {b} x₁ 
+    = refl
+get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))} {tran {a} (child here) a⇒y} {self} {node x₂ x₃} {b} x₁ 
+    = refl
+get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} {tran {a} (child (there a∈xs)) a⇒y} {self} {node x₂ x₃} {b} x₁ 
+    = refl
+get-set-prop-other {x@(node xs@(_ ∷ _))} {y} {z} {tran {a} (child a∈xs) a⇒y} {tran {a′} (child a′∈xs) a′⇒z} {node b′ txs} {b} x₁ 
+    = help 
+    where 
+        help : _ 
+        help = get-set-other-help {y} {z} {a} {a′} {xs} {txs} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
+get-set-other-help {y} {z} {a} {.a} {.(a ∷ _)} {x₂ ∷ x₃} {a⇒z} {a⇒y} {here} {here} {b} x = 
+    get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₂} x₄
+    where
+        x₄ : a⇒y ≢ᵖ a⇒z
+        x₄ refl = x refl
+get-set-other-help {y} {z} {a} {a′} {.(a′ ∷ _)} {x₂ ∷ x₃} {a′⇒z} {a⇒y} {here} {there a∈xs} {b} x 
+    = refl
+get-set-other-help {y} {z} {a} {a′} {.(a ∷ _)} {x₂ ∷ x₃} {a′⇒z} {a⇒y} {there a′∈xs} {here} {b} x 
+    = refl
+get-set-other-help {y} {z} {a} {a′} {(_ ∷ xs)} {x₂ ∷ x₃} {a′⇒z} {a⇒y} {there a′∈xs} {there a∈xs} {b} x 
+    = get-set-other-help {y} {z} {a} {a′} {xs} {x₃} x₄
+    where
+        x₄ : tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
+        x₄ refl = x refl
+
 add : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
 add x y = get-set x y true
 
@@ -119,17 +167,36 @@ add-valid   : ∀ {x y : TreeShape} {tx : Tree x} {x⇒y : x ⇒ y}
             → valid x⇒y (add x⇒y tx)
 add-valid {x} {y} {tx} {x⇒y} = get-set-prop {x} {y} {x⇒y} {tx} {true}
 
+add-valid-other : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
+                    {b : Bool} → x⇒y ≢ᵖ x⇒z
+                    → get-valid? x⇒z (add x⇒y tx) 
+                    ≡ get-valid? x⇒z tx 
+add-valid-other = get-set-prop-other
+
 remove : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
 remove x y = get-set x y false 
 
 remove-invalid  : ∀ {x y : TreeShape} {tx : Tree x} {x⇒y : x ⇒ y} 
                 → invalid x⇒y (remove x⇒y tx)
 remove-invalid {x} {y} {tx} {x⇒y} = get-set-prop {x} {y} {x⇒y} {tx} {false}
+
+remove-valid-other : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
+                    {b : Bool} → x⇒y ≢ᵖ x⇒z
+                    → get-valid? x⇒z (remove x⇒y tx) 
+                    ≡ get-valid? x⇒z tx 
+remove-valid-other = get-set-prop-other
 ```
 
 ## Failed attempts and random pieces of code
 
 ```plaintext
+-- get-set-other-help {.(node xs)} {z} {a} {a′} {xs} {self} {x⇒z} {tx} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x = {!   !}
+-- get-set-other-help {y} {z} {a} {a′} {xs} {tran x₁ x⇒y} {x⇒z} {tx} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x = {!   !} 
+-- get-set-other-help  {y} {z} {a} {a} {xs} {tran {a} (child here) a⇒y} {tran {a} (child here) a⇒z} {node x₂ (x₃ ∷ x₄)}  x₁ = get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₃}  x₅
+
+--get-set-prop-other {x@(node .(_ ∷ _))} {y} {z} {tran {a} (child (there a∈xs)) a⇒y} {tran x₂ x⇒z} {tx} {b} x₁ = {!   !}
+
+
 valid : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
 valid x x₁ = (get-valid? x x₁) ≡ true
 
