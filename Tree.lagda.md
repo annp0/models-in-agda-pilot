@@ -1,4 +1,5 @@
 ```agda
+{-# OPTIONS --exact-split #-}
 open import Data.Bool
 open import Data.List
 open import Data.Product
@@ -144,14 +145,11 @@ get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))}
 get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} 
     {tran {a} (child (there a∈xs)) a⇒y} {self} {node x₂ x₃} {b} x₁ 
     = refl
-get-set-prop-other {x@(node xs@(_ ∷ _))} {y} {z} 
+{-# CATCHALL #-}
+get-set-prop-other {x@(node xs)} {y} {z} 
     {tran {a} (child a∈xs) a⇒y} {tran {a′} (child a′∈xs) a′⇒z} 
-    {node b′ txs} {b} x₁ 
-    = help 
-    where 
-        help : _ 
-        help = get-set-other-help {y} {z} {a} {a′} {xs} {txs} 
-            {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
+    {node b′ txs} {b} x₁ = get-set-other-help {y} {z} {a} {a′} {xs} {txs} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
+    -- =     -- STOP BEING YELLOW !!!
 get-set-other-help {y} {z} {a} {.a} {.(a ∷ _)} {x₂ ∷ x₃} 
     {a⇒z} {a⇒y} {here} {here} {b} x 
     = get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₂} x₄
