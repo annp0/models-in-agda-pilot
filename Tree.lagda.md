@@ -1,5 +1,4 @@
 ```agda
-{-# OPTIONS --exact-split #-}
 open import Data.Bool
 open import Data.List
 open import Data.Product
@@ -131,25 +130,37 @@ get-set-other-help  : ∀ {y z a a′ : TreeShape} {xs : List TreeShape}
                     →  tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
                     → valid? (get a′⇒z (get-list a′∈xs (get-set-help a∈xs a⇒y txs b)))
                     ≡ valid? (get a′⇒z (get-list a′∈xs txs))
-get-set-prop-other {.leaf} {.leaf} {.leaf} {self} {self} {leaf x} {b} x₁ 
-    = ⊥-elim (x₁ refl)
-get-set-prop-other {.(node _)} {.(node _)} {.(node _)} {self} {self} 
-    {node x x₂} {b} x₁ 
-    = ⊥-elim (x₁ refl)
-get-set-prop-other {.(node _)} {.(node _)} {z} {self} 
-    {tran {y} (child x₃) y⇒z} {node x x₂} {b} x₁ 
-    = refl
-get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))} 
-    {tran {a} (child here) a⇒y} {self} {node x₂ x₃} {b} x₁ 
-    = refl
-get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} 
-    {tran {a} (child (there a∈xs)) a⇒y} {self} {node x₂ x₃} {b} x₁ 
-    = refl
-{-# CATCHALL #-}
 get-set-prop-other {x@(node xs)} {y} {z} 
     {tran {a} (child a∈xs) a⇒y} {tran {a′} (child a′∈xs) a′⇒z} 
-    {node b′ txs} {b} x₁ = get-set-other-help {y} {z} {a} {a′} {xs} {txs} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
-    -- =     -- STOP BEING YELLOW !!!
+    {node b′ txs} 
+    {b} x₁ 
+    = get-set-other-help {y} {z} {a} {a′} {xs} {txs} 
+    {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
+get-set-prop-other {.leaf} {.leaf} {.leaf} 
+    {self} {self} 
+    {leaf x} 
+    {b} x₁ 
+    = ⊥-elim (x₁ refl)
+get-set-prop-other {.(node _)} {.(node _)} {.(node _)} 
+    {self} {self} 
+    {node x x₂} 
+    {b} x₁ 
+    = ⊥-elim (x₁ refl)
+get-set-prop-other {.(node _)} {.(node _)} {z} 
+    {self} {tran {y} (child x₃) y⇒z} 
+    {node x x₂} 
+    {b} x₁ 
+    = refl
+get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))} 
+    {tran {a} (child here) a⇒y} {self} 
+    {node x₂ x₃} 
+    {b} x₁ 
+    = refl
+get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} 
+    {tran {a} (child (there a∈xs)) a⇒y} {self} 
+    {node x₂ x₃} 
+    {b} x₁ 
+    = refl
 get-set-other-help {y} {z} {a} {.a} {.(a ∷ _)} {x₂ ∷ x₃} 
     {a⇒z} {a⇒y} {here} {here} {b} x 
     = get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₂} x₄
