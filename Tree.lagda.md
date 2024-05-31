@@ -113,13 +113,23 @@ get-set-prop-help {y} {z} {y⇒z} {.(y ∷ _)} {ty ∷ txs} {here} {b}          
     get-set-prop {y} {z} {y⇒z} {ty} {b}
 get-set-prop-help {y} {z} {y⇒z} {x ∷ xs} {tx ∷ txs} {there y∈xs} {b}        =
     get-set-prop-help {y} {z} {y⇒z} {xs} {txs} {y∈xs} {b}
+```
 
+Since our paths are dependently typed, we need a separate notion
+of equality and inequality. 
+
+```agda
 data _≡ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set where
     refl : ∀ {x y : TreeShape} {x⇒y : x ⇒ y} → x⇒y ≡ᵖ x⇒y 
 
 _≢ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set
-x⇒y ≢ᵖ x⇒z = ¬ (x⇒y ≡ᵖ x⇒z) 
+x⇒y ≢ᵖ x⇒z = ¬ (x⇒y ≡ᵖ x⇒z)
+```
 
+Now we are ready to show that the `get-set` operation
+will leave other files in the system untouched.
+
+```agda
 get-set-prop-other  : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
                     {b : Bool} → x⇒y ≢ᵖ x⇒z
                     → get-valid? x⇒z (get-set x⇒y tx b) 
@@ -179,7 +189,11 @@ get-set-other-help {y} {z} {a} {a′} {(_ ∷ xs)} {x₂ ∷ x₃}
     where
         x₄ : tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
         x₄ refl = x refl
+```
 
+Back to the specification,
+
+```agda
 add : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
 add x y = get-set x y true
 
