@@ -2,7 +2,7 @@
 open import Data.Bool
 open import Data.List
 open import Data.Product
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; cong)
+open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 open import Relation.Nullary using (¬_)
 open import Data.Empty
 ```
@@ -17,7 +17,7 @@ data TreeShape : Set where
     node    : List TreeShape → TreeShape
 ```
 
-Trees are indexed by TreeShape, just like `Vec Nat` and Nat
+Trees are indexed by TreeShape, just like `Vec Nat` and `Nat`
 
 Must define a new type `TreeList` for a list of trees, since
 it needs to be indexed by a list of shapes now.
@@ -64,25 +64,25 @@ cannot be modified.
 ```agda
 get-list    : ∀ {x : TreeShape} {xs : List TreeShape} 
             → x ∈ xs → TreeList xs → Tree x 
-get-list here (x ∷ x₁)          = x
-get-list (there x) (x₁ ∷ x₂)    = get-list x x₂
+get-list here (x ∷ _)              = x
+get-list (there x∈xs) (_ ∷ xs)     = get-list x∈xs xs 
 
 get : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree y 
-get self x₁                         = x₁
-get (tran (child x) x₂) (node _ x₃) = get x₂ (get-list x x₃)
+get self tx                             = tx
+get (tran (child y∈xs) y⇒z) (node _ tx) = get y⇒z (get-list y∈xs tx)
 
 valid? : ∀ {x : TreeShape} → Tree x → Bool
-valid? (leaf x)     = x
-valid? (node x _)   = x
+valid? (leaf b)     = b
+valid? (node b _)   = b
 
 get-valid? : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Bool
-get-valid? x x₁ = valid? (get x x₁)
+get-valid? x⇒y tx = valid? (get x⇒y tx)
 
 valid : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
-valid x x₁ = (get-valid? x x₁) ≡ true
+valid x⇒y tx = (get-valid? x⇒y tx) ≡ true
 
 invalid : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
-invalid x x₁ = (get-valid? x x₁) ≡ false 
+invalid x⇒y tx = (get-valid? x⇒y tx) ≡ false 
 ```
 
 `get-set` will change the boolean value of a node, given the path to that node.
@@ -93,26 +93,36 @@ the `remove` operation is just changing it to `false`.
 get-set         : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Bool → Tree x
 get-set-help    : ∀ {y z : TreeShape} {xs : List TreeShape} → y ∈ xs 
                 → y ⇒ z → TreeList xs → Bool → TreeList xs
-get-set self (leaf _) x₂                    = leaf x₂
-get-set self (node _ x₁) x₂                 = node x₂ x₁
-get-set (tran (child x) x₃) (node x₁ x₄) x₂ = node x₁ (get-set-help x x₃ x₄ x₂)
-get-set-help here x₁ (x ∷ x₂) x₃            = get-set x₁ x x₃ ∷ x₂
-get-set-help (there x) x₁ (x₂ ∷ x₄) x₃      = x₂ ∷ get-set-help x x₁ x₄ x₃
+get-set self (leaf _) b                         = leaf b
+get-set self (node _ txs) b                     = node b txs
+get-set (tran (child y∈xs) y⇒z) (node bx txs) b = 
+    node bx (get-set-help y∈xs y⇒z txs b)
+get-set-help here y⇒z (y ∷ xs) b                = 
+    get-set y⇒z y b ∷ xs
+get-set-help (there y∈xs) y⇒z (x ∷ xs) b        = 
+    x ∷ get-set-help y∈xs y⇒z xs b
 
-get-set-prop        : ∀ {x y : TreeShape} {x⇒y : x ⇒ y} {tx : Tree x} {b : Bool} 
+get-set-prop        : ∀ {x y : TreeShape} → (x⇒y : x ⇒ y) → (tx : Tree x) 
+                    → (b : Bool) 
                     → get-valid? x⇒y (get-set x⇒y tx b) ≡ b 
-get-set-prop-help   : ∀ {y z : TreeShape} {y⇒z : y ⇒ z} {xs : List TreeShape} 
-                        {txs : TreeList xs} {y∈xs : y ∈ xs} {b : Bool}
+get-set-prop-help   : ∀ {y z : TreeShape} → (y⇒z : y ⇒ z) → (xs : List TreeShape) 
+                    → (txs : TreeList xs) → (y∈xs : y ∈ xs) → (b : Bool)
                     → valid? (get y⇒z (get-list y∈xs (get-set-help y∈xs y⇒z txs b))) 
                     ≡ b
-get-set-prop {.leaf} {.leaf} {self} {leaf x} {b}                            = refl
-get-set-prop {.(node _)} {.(node _)} {self} {node x x₁} {b}                 = refl
-get-set-prop {node xs} {z} {tran {y} (child y∈xs) y⇒z} {node bx txs} {b}    = 
-    get-set-prop-help {y} {z} {y⇒z} {xs} {txs} {y∈xs} {b}  
-get-set-prop-help {y} {z} {y⇒z} {.(y ∷ _)} {ty ∷ txs} {here} {b}            = 
-    get-set-prop {y} {z} {y⇒z} {ty} {b}
-get-set-prop-help {y} {z} {y⇒z} {x ∷ xs} {tx ∷ txs} {there y∈xs} {b}        =
-    get-set-prop-help {y} {z} {y⇒z} {xs} {txs} {y∈xs} {b}
+-- when we modify the value of root, and the root is a leaf
+get-set-prop self (leaf x) b  = refl
+-- when we modify the value of root, and the root is a node
+get-set-prop self (node _ _) b = refl
+-- when we modify the value of a child, we use `get-set-prop-help`
+-- to bring it down to the list level
+get-set-prop {node xs} {z} 
+    (tran (child y∈xs) y⇒z) (node bx txs) b    
+    = get-set-prop-help y⇒z xs txs y∈xs b  
+-- if the child is right here in the list
+get-set-prop-help y⇒z _ (ty ∷ _) here b = get-set-prop y⇒z ty b
+-- if the child is in the rest of the list
+get-set-prop-help y⇒z (x ∷ xs) (tx ∷ txs) (there y∈xs) b        =
+    get-set-prop-help y⇒z xs txs y∈xs b
 ```
 
 Since our paths are dependently typed, we need a separate notion
@@ -130,95 +140,85 @@ Now we are ready to show that the `get-set` operation
 will leave other files in the system untouched.
 
 ```agda
-get-set-prop-other  : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
-                    {b : Bool} → x⇒y ≢ᵖ x⇒z
+get-set-prop-other  : ∀ {x y z : TreeShape} → 
+                    (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) → (tx : Tree x)
+                    → (b : Bool) → x⇒y ≢ᵖ x⇒z
                     → get-valid? x⇒z (get-set x⇒y tx b) 
                     ≡ get-valid? x⇒z tx 
-get-set-other-help  : ∀ {y z a a′ : TreeShape} {xs : List TreeShape} 
-                    {txs : TreeList xs} {a′⇒z : a′ ⇒ z} {a⇒y : a ⇒ y} 
-                    {a′∈xs : a′ ∈ xs} {a∈xs : a ∈ xs} {b : Bool}
+get-set-other-help  : ∀ {y z a a′ : TreeShape} → (xs : List TreeShape) 
+                    → (txs : TreeList xs) → (a′⇒z : a′ ⇒ z) → (a⇒y : a ⇒ y)
+                    → (a′∈xs : a′ ∈ xs) → (a∈xs : a ∈ xs) → (b : Bool)
                     →  tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
                     → valid? (get a′⇒z (get-list a′∈xs (get-set-help a∈xs a⇒y txs b)))
                     ≡ valid? (get a′⇒z (get-list a′∈xs txs))
-get-set-prop-other {x@(node xs)} {y} {z} 
-    {tran {a} (child a∈xs) a⇒y} {tran {a′} (child a′∈xs) a′⇒z} 
-    {node b′ txs} 
-    {b} x₁ 
-    = get-set-other-help {y} {z} {a} {a′} {xs} {txs} 
-    {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x₁
-get-set-prop-other {.leaf} {.leaf} {.leaf} 
-    {self} {self} 
-    {leaf x} 
-    {b} x₁ 
-    = ⊥-elim (x₁ refl)
-get-set-prop-other {.(node _)} {.(node _)} {.(node _)} 
-    {self} {self} 
-    {node x x₂} 
-    {b} x₁ 
-    = ⊥-elim (x₁ refl)
-get-set-prop-other {.(node _)} {.(node _)} {z} 
-    {self} {tran {y} (child x₃) y⇒z} 
-    {node x x₂} 
-    {b} x₁ 
-    = refl
-get-set-prop-other {x@(node .(a ∷ _))} {y} {.(node (a ∷ _))} 
-    {tran {a} (child here) a⇒y} {self} 
-    {node x₂ x₃} 
-    {b} x₁ 
-    = refl
-get-set-prop-other {x@(node .(_ ∷ _))} {y} {.(node (_ ∷ _))} 
-    {tran {a} (child (there a∈xs)) a⇒y} {self} 
-    {node x₂ x₃} 
-    {b} x₁ 
-    = refl
-get-set-other-help {y} {z} {a} {.a} {.(a ∷ _)} {x₂ ∷ x₃} 
-    {a⇒z} {a⇒y} {here} {here} {b} x 
-    = get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₂} x₄
+-- if y and z are the same node as x, then the path must be equal and
+-- hence those cases are impossible
+get-set-prop-other self self (leaf _) _ neq = ⊥-elim (neq refl)
+get-set-prop-other self self (node _ _) _ neq = ⊥-elim (neq refl)
+-- if y is the same node as x, then the rest of the tree is unchanged
+get-set-prop-other self (tran (child _) _) (node _ _) _ _ = refl
+-- the same goes when z is the same as x
+get-set-prop-other (tran (child _) _) self (node _ _) _ _ = refl
+-- otherwise we go down to the children list level
+get-set-prop-other {node xs}
+    (tran {a} (child a∈xs) a⇒y) 
+    (tran {a′} (child a′∈xs) a′⇒z) 
+    (node _ txs) b neq 
+    = get-set-other-help xs txs a′⇒z a⇒y a′∈xs a∈xs b neq
+-- if both are on the top of their list respectively,
+-- we just use the main proof
+get-set-other-help _ (ta ∷ _) a⇒z a⇒y here here b neq 
+    = get-set-prop-other a⇒y a⇒z ta b neq′
     where
-        x₄ : a⇒y ≢ᵖ a⇒z
-        x₄ refl = x refl
-get-set-other-help {y} {z} {a} {a′} {.(a′ ∷ _)} {x₂ ∷ x₃} 
-    {a′⇒z} {a⇒y} {here} {there a∈xs} {b} x 
-    = refl
-get-set-other-help {y} {z} {a} {a′} {.(a ∷ _)} {x₂ ∷ x₃} 
-    {a′⇒z} {a⇒y} {there a′∈xs} {here} {b} x 
-    = refl
-get-set-other-help {y} {z} {a} {a′} {(_ ∷ xs)} {x₂ ∷ x₃} 
-    {a′⇒z} {a⇒y} {there a′∈xs} {there a∈xs} {b} x 
-    = get-set-other-help {y} {z} {a} {a′} {xs} {x₃} x₄
+        neq′ : a⇒y ≢ᵖ a⇒z
+        neq′ refl = neq refl
+-- if they are at different positions, it is just refl
+get-set-other-help (_ ∷ _) (_ ∷ _) 
+    a′⇒z a⇒y here (there a∈xs) _ _ = refl
+get-set-other-help (_ ∷ _) (_ ∷ _) 
+    a′⇒z a⇒y (there a′∈xs) here _ _ = refl
+-- if they are both in the rest of their lists, recursively
+-- call the help function
+get-set-other-help (_ ∷ xs) (_ ∷ txs) 
+    a′⇒z a⇒y (there a′∈xs) (there a∈xs) b neq
+    = get-set-other-help xs txs a′⇒z a⇒y a′∈xs a∈xs b neq′ 
     where
-        x₄ : tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
-        x₄ refl = x refl
+        neq′ : tran (child a∈xs) a⇒y ≢ᵖ tran (child a′∈xs) a′⇒z
+        neq′ refl = neq refl
 ```
 
 Back to the specification,
 
 ```agda
 add : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
-add x y = get-set x y true
+add x⇒y tx = get-set x⇒y tx true
 
-add-valid   : ∀ {x y : TreeShape} {tx : Tree x} {x⇒y : x ⇒ y} 
+add-valid   : ∀ {x y : TreeShape} → (tx : Tree x) → (x⇒y : x ⇒ y) 
             → valid x⇒y (add x⇒y tx)
-add-valid {x} {y} {tx} {x⇒y} = get-set-prop {x} {y} {x⇒y} {tx} {true}
+add-valid {x} {y} tx x⇒y = get-set-prop x⇒y tx true
 
-add-valid-other : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
-                    {b : Bool} → x⇒y ≢ᵖ x⇒z
+add-valid-other : ∀ {x y z : TreeShape} → (x⇒y : x ⇒ y) 
+                    → (x⇒z : x ⇒ z) → (tx : Tree x)
+                    → x⇒y ≢ᵖ x⇒z
                     → get-valid? x⇒z (add x⇒y tx) 
                     ≡ get-valid? x⇒z tx 
-add-valid-other = get-set-prop-other
+add-valid-other x⇒y x⇒z tx neq = get-set-prop-other x⇒y x⇒z tx true neq
 
 remove : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
-remove x y = get-set x y false 
+remove x⇒y tx = get-set x⇒y tx false 
 
-remove-invalid  : ∀ {x y : TreeShape} {tx : Tree x} {x⇒y : x ⇒ y} 
+remove-invalid : ∀ {x y : TreeShape} → 
+                (tx : Tree x) → (x⇒y : x ⇒ y) 
                 → invalid x⇒y (remove x⇒y tx)
-remove-invalid {x} {y} {tx} {x⇒y} = get-set-prop {x} {y} {x⇒y} {tx} {false}
+remove-invalid tx x⇒y = get-set-prop x⇒y tx false
 
-remove-valid-other : ∀ {x y z : TreeShape} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {tx : Tree x}
-                    {b : Bool} → x⇒y ≢ᵖ x⇒z
+remove-valid-other : ∀ {x y z : TreeShape} 
+                    → (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) 
+                    → (tx : Tree x)
+                    → x⇒y ≢ᵖ x⇒z
                     → get-valid? x⇒z (remove x⇒y tx) 
                     ≡ get-valid? x⇒z tx 
-remove-valid-other = get-set-prop-other
+remove-valid-other x⇒y x⇒z tx neq = get-set-prop-other x⇒y x⇒z tx false neq
 ```
 
 ## Failed attempts and random pieces of code
