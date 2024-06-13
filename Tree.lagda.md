@@ -1,13 +1,17 @@
 ```agda
-open import Data.Bool
-open import Data.List
-open import Data.Product
+open import Data.List using (List; []; _∷_)
 open import Relation.Binary.PropositionalEquality using (_≡_; refl)
 open import Relation.Nullary using (¬_)
-open import Data.Empty
+open import Data.Empty using (⊥; ⊥-elim)
 ```
 
-# The Rose-tree approach, with all paths already given 
+We use the simplified definition of `Dec`.
+
+```agda
+data Dec (A : Set) : Set where
+    yes : A → Dec A
+    no : ¬ A → Dec A
+```
 
 To get a content-independent path, we define the shape of a tree.
 
@@ -20,12 +24,16 @@ data TreeShape : Set where
 Trees are indexed by TreeShape, just like `Vec Nat` and `Nat`
 
 Must define a new type `TreeList` for a list of trees, since
-it needs to be indexed by a list of shapes now.
+it needs to be indexed by a list of shapes.
 
-The contents of a tree are boolean values, representing whether
-the respective nodes are in the tree (valid) or not (invalid)
+Each node of the tree is marked by `Status`, which indicates
+whether the node is live or erased.
 
 ```agda 
+data Status : Set where
+    live    : Status
+    erased  : Status
+
 data TreeList : List TreeShape → Set
 data Tree : TreeShape → Set
 
@@ -35,12 +43,12 @@ data TreeList where
             → Tree x → TreeList xs → TreeList (x ∷ xs)  
 
 data Tree where
-    leaf    : (x : Bool) → Tree leaf
+    leaf    : Status → Tree leaf
     node    : ∀ {ts : List TreeShape} 
-            → Bool → TreeList ts → Tree (node ts) 
+            → Status → TreeList ts → Tree (node ts) 
 ```
 
-The paths now are purely on shapes now
+Our path is independent from the content of the tree.
 
 ```agda
 data _∈_ : TreeShape → List TreeShape → Set where
@@ -57,9 +65,43 @@ data _⇒_ : TreeShape → TreeShape → Set where
     tran    : ∀ {y x z : TreeShape} → y ∈ᶜ x → y ⇒ z → x ⇒ z
 ```
 
+A tree is valid when all the children of an erased node is erased.
+
+```agda
+data Not-in : ∀ {x : TreeShape} → Tree x → Set where
+    leaf : Not-in (leaf erased)
+    node : ∀ {xs : List TreeShape} {txs : TreeList xs} → Not-in (node erased txs)
+
+data Is-node : TreeShape → Set where
+    node : ∀ {xs : List TreeShape} → Is-node (node xs)
+
+data Is-in : ∀ {x : TreeShape} → Tree x → Set where
+    leaf : Is-in (leaf live)
+    node : ∀ {xs : List TreeShape} {txs : TreeList xs} → Is-in (node live txs)
+
+data All : ∀ {xs : List TreeShape} → (∀ {x : TreeShape} → Tree x → Set) → TreeList xs → Set where
+    [] : ∀ {P : ∀ {x : TreeShape} → Tree x → Set} → All P []
+    _∷_ : ∀ {x : TreeShape} {tx : Tree x} {xs : List TreeShape} {txs : TreeList xs} 
+            {P : ∀ {x : TreeShape} → Tree x → Set} → P tx → All P txs → All P (tx ∷ txs)
+
+-- cannot use `All Valid xs` because of termination checking
+data All-valid : ∀ {xs : List TreeShape} → TreeList xs → Set 
+data Valid : ∀ {x : TreeShape} → Tree x → Set
+
+data Valid where
+    leaf        : Valid (leaf live)
+    node-live   : ∀ {xs : List TreeShape} {txs : TreeList xs} → 
+                All-valid txs → Valid (node live txs)
+    node-erased : ∀ {xs : List TreeShape} {txs : TreeList xs} →
+                All-valid txs → All Not-in txs → Valid (node erased txs)
+
+data All-valid where
+    []  : All-valid []
+    _∷_ : ∀ {x : TreeShape} {tx : Tree x} {xs : List TreeShape} {txs : TreeList xs}
+            → Valid tx → All-valid txs → All-valid (tx ∷ txs)
+```
+
 The basic functions to traverse and change the content of the tree.
-Since the collection of all valid paths is already given, the shape
-cannot be modified.
 
 ```agda
 get-list    : ∀ {x : TreeShape} {xs : List TreeShape} 
@@ -71,28 +113,20 @@ get : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree y
 get self tx                             = tx
 get (tran (child y∈xs) y⇒z) (node _ tx) = get y⇒z (get-list y∈xs tx)
 
-valid? : ∀ {x : TreeShape} → Tree x → Bool
-valid? (leaf b)     = b
-valid? (node b _)   = b
+status : ∀ {x : TreeShape} → Tree x → Status
+status (leaf b)     = b
+status (node b _)   = b
 
-get-valid? : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Bool
-get-valid? x⇒y tx = valid? (get x⇒y tx)
-
-valid : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
-valid x⇒y tx = (get-valid? x⇒y tx) ≡ true
-
-invalid : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
-invalid x⇒y tx = (get-valid? x⇒y tx) ≡ false 
+get-status : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Status 
+get-status x⇒y tx = status (get x⇒y tx)
 ```
 
 `get-set` will change the boolean value of a node, given the path to that node.
-Now the `add` operation is just changing it to `true`,
-the `remove` operation is just changing it to `false`.
 
 ```agda
-get-set         : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Bool → Tree x
+get-set         : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Status → Tree x
 get-set-help    : ∀ {y z : TreeShape} {xs : List TreeShape} → y ∈ xs 
-                → y ⇒ z → TreeList xs → Bool → TreeList xs
+                → y ⇒ z → TreeList xs → Status → TreeList xs
 get-set self (leaf _) b                         = leaf b
 get-set self (node _ txs) b                     = node b txs
 get-set (tran (child y∈xs) y⇒z) (node bx txs) b = 
@@ -103,11 +137,11 @@ get-set-help (there y∈xs) y⇒z (x ∷ xs) b        =
     x ∷ get-set-help y∈xs y⇒z xs b
 
 get-set-prop        : ∀ {x y : TreeShape} → (x⇒y : x ⇒ y) → (tx : Tree x) 
-                    → (b : Bool) 
-                    → get-valid? x⇒y (get-set x⇒y tx b) ≡ b 
+                    → (b : Status) 
+                    → get-status x⇒y (get-set x⇒y tx b) ≡ b 
 get-set-prop-help   : ∀ {y z : TreeShape} → (y⇒z : y ⇒ z) → (xs : List TreeShape) 
-                    → (txs : TreeList xs) → (y∈xs : y ∈ xs) → (b : Bool)
-                    → valid? (get y⇒z (get-list y∈xs (get-set-help y∈xs y⇒z txs b))) 
+                    → (txs : TreeList xs) → (y∈xs : y ∈ xs) → (b : Status)
+                    → get-status y⇒z (get-list y∈xs (get-set-help y∈xs y⇒z txs b)) 
                     ≡ b
 -- when we modify the value of root, and the root is a leaf
 get-set-prop self (leaf x) b  = refl
@@ -121,8 +155,8 @@ get-set-prop {node xs} {z}
 -- if the child is right here in the list
 get-set-prop-help y⇒z _ (ty ∷ _) here b = get-set-prop y⇒z ty b
 -- if the child is in the rest of the list
-get-set-prop-help y⇒z (x ∷ xs) (tx ∷ txs) (there y∈xs) b        =
-    get-set-prop-help y⇒z xs txs y∈xs b
+get-set-prop-help y⇒z (x ∷ xs) (tx ∷ txs) (there y∈xs) b
+    = get-set-prop-help y⇒z xs txs y∈xs b
 ```
 
 Since our paths are dependently typed, we need a separate notion
@@ -142,15 +176,15 @@ will leave other files in the system untouched.
 ```agda
 get-set-prop-other  : ∀ {x y z : TreeShape} → 
                     (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) → (tx : Tree x)
-                    → (b : Bool) → x⇒y ≢ᵖ x⇒z
-                    → get-valid? x⇒z (get-set x⇒y tx b) 
-                    ≡ get-valid? x⇒z tx 
+                    → (b : Status) → x⇒y ≢ᵖ x⇒z
+                    → get-status x⇒z (get-set x⇒y tx b) 
+                    ≡ get-status x⇒z tx 
 get-set-other-help  : ∀ {y z a a′ : TreeShape} → (xs : List TreeShape) 
                     → (txs : TreeList xs) → (a′⇒z : a′ ⇒ z) → (a⇒y : a ⇒ y)
-                    → (a′∈xs : a′ ∈ xs) → (a∈xs : a ∈ xs) → (b : Bool)
+                    → (a′∈xs : a′ ∈ xs) → (a∈xs : a ∈ xs) → (b : Status)
                     →  tran {a} (child a∈xs) a⇒y ≢ᵖ tran {a′} (child a′∈xs) a′⇒z
-                    → valid? (get a′⇒z (get-list a′∈xs (get-set-help a∈xs a⇒y txs b)))
-                    ≡ valid? (get a′⇒z (get-list a′∈xs txs))
+                    → get-status a′⇒z (get-list a′∈xs (get-set-help a∈xs a⇒y txs b))
+                    ≡ get-status a′⇒z (get-list a′∈xs txs)
 -- if y and z are the same node as x, then the path must be equal and
 -- hence those cases are impossible
 get-set-prop-other self self (leaf _) _ neq = ⊥-elim (neq refl)
@@ -187,9 +221,144 @@ get-set-other-help (_ ∷ xs) (_ ∷ txs)
         neq′ refl = neq refl
 ```
 
-Back to the specification,
+
+
+The add operation
 
 ```agda
+data _≡ᵐ_ : ∀ {x y : TreeShape} {xs : List TreeShape} → x ∈ xs → y ∈ xs → Set where
+    refl : ∀ {x : TreeShape} {xs : List TreeShape} {x∈xs : x ∈ xs} → x∈xs ≡ᵐ x∈xs
+
+_≢ᵐ_ : ∀ {x y : TreeShape} {xs : List TreeShape} → x ∈ xs → y ∈ xs → Set
+x∈xs ≢ᵐ y∈xs = ¬ (x∈xs ≡ᵐ y∈xs)
+
+list-set : ∀ {x : TreeShape} {xs : List TreeShape} → x ∈ xs → TreeShape → List TreeShape
+list-set {_} {_ ∷ xs} here y = y ∷ xs
+list-set {_} {a ∷ xs} (there x∈xs) y = a ∷ list-set x∈xs y
+
+list-set-new : ∀ {x y : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ xs)  
+                → y ∈ (list-set x∈xs y)
+list-set-new here = here
+list-set-new (there x∈xs) = there (list-set-new x∈xs)
+
+list-set-lift : ∀ {x y z : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ xs) → (y∈xs : y ∈ xs) 
+                → x∈xs ≢ᵐ y∈xs → y ∈ (list-set x∈xs z)
+list-set-lift here here neq = ⊥-elim (neq refl)
+list-set-lift here (there y∈xs) neq = there y∈xs
+list-set-lift (there x∈xs) here neq = here
+list-set-lift (there x∈xs) (there y∈xs) neq = there (list-set-lift x∈xs y∈xs neq′)
+    where 
+        neq′ : x∈xs ≢ᵐ y∈xs
+        neq′ refl = neq refl
+
+list-add : TreeShape → List TreeShape → List TreeShape 
+list-add x xs = x ∷ xs
+
+list-add-new : ∀ {x : TreeShape} {xs : List TreeShape} → x ∈ (list-add x xs)
+list-add-new = here
+
+list-add-lift : ∀ {x y : TreeShape} {xs : List TreeShape} → x ∈ xs → x ∈ (list-add y xs)
+list-add-lift x∈xs = there x∈xs
+
+add-shape : ∀ {x y : TreeShape} → Is-node x → Is-node y → x ⇒ y → TreeShape → TreeShape
+add-shape {node xs} node node self z = node (list-add z xs)
+add-shape {node xs} node node (tran {leaf} (child y∈xs) (tran () y⇒z)) a
+add-shape {node xs} node node (tran {node x} (child y∈xs) y⇒z) a = node (list-set y∈xs (add-shape node node y⇒z a))
+
+data _≤ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set where
+    zero : ∀ {x y : TreeShape} {x⇒x : x ⇒ x} {x⇒y : x ⇒ y} → x⇒x ≤ᵖ x⇒y
+    succ : ∀ {x y z a : TreeShape} {y⇒a : y ⇒ a} {y⇒z : y ⇒ z} {y∈x : y ∈ᶜ x} → 
+            y⇒a ≤ᵖ y⇒z → (tran y∈x y⇒a) ≤ᵖ (tran y∈x y⇒z)
+
+_≰ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set
+x⇒y ≰ᵖ x⇒z = ¬ (x⇒y ≤ᵖ x⇒z)
+
+
+
+_≡ᵐ?_ : ∀ {x y : TreeShape} {xs : List TreeShape} (x∈xs : x ∈ xs) (y∈xs : y ∈ xs)
+        → Dec (x∈xs ≡ᵐ y∈xs)
+here ≡ᵐ? here = yes refl
+here ≡ᵐ? there y∈xs = no λ ()
+there x∈xs ≡ᵐ? here = no λ () 
+there x∈xs ≡ᵐ? there y∈xs with x∈xs ≡ᵐ? y∈xs 
+...                         | yes refl = yes refl
+...                         | no neq = no neq′ 
+                                    where
+                                        neq′ : there (x∈xs) ≢ᵐ there (y∈xs)
+                                        neq′ refl = neq refl
+
+add-shape-lift : ∀ {x y a : TreeShape} → (ix : Is-node x) → (iy : Is-node y) →
+                 (x⇒y : x ⇒ y) → (x⇒a : x ⇒ a) → x⇒a ≰ᵖ x⇒y → (z : TreeShape) → (add-shape ix iy x⇒y z) ⇒ a
+add-shape-lift node node self self nleq z = ⊥-elim (nleq zero)
+add-shape-lift node node self (tran (child y∈xs) y⇒a) nleq z = tran (child (list-add-lift y∈xs)) y⇒a
+add-shape-lift node node (tran {b} (child b∈xs) b⇒y) self nleq z = ⊥-elim (nleq zero)
+add-shape-lift node node (tran {leaf} (child b∈xs) (tran () b⇒y)) (tran {c} (child c∈xs) c⇒a) nleq z
+add-shape-lift node node (tran {b@(node bs)} (child b∈xs) b⇒y) (tran {c} (child c∈xs) c⇒a) nleq z with (b∈xs ≡ᵐ? c∈xs) 
+... | yes refl = let r = add-shape node node b⇒y z
+                in tran {r} (child (list-set-new b∈xs)) (add-shape-lift node node b⇒y c⇒a nleq′ z)
+                where 
+                    nleq′ : c⇒a ≤ᵖ b⇒y → ⊥
+                    nleq′ n = nleq (succ n)
+... | no neq = tran {c} (child (list-set-lift b∈xs c∈xs neq)) c⇒a
+
+add-shape-new : ∀ {x y : TreeShape} → (ix : Is-node x) → (iy : Is-node y) →
+                (x⇒y : x ⇒ y) → (z : TreeShape) → (add-shape ix iy x⇒y z) ⇒ z 
+add-shape-new node node self z = tran {z} (child list-add-new) self
+add-shape-new node node (tran {leaf} (child y∈xs) (tran () y⇒a)) z
+add-shape-new node node (tran {node ys} (child y∈xs) y⇒a) z = 
+    let r = add-shape node node y⇒a z
+    in tran {r} (child (list-set-new y∈xs)) (add-shape-new node node y⇒a z)
+
+tree-list-set : ∀ {x y : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ xs) 
+                → Tree y → TreeList xs → TreeList (list-set x∈xs y)
+tree-list-set here ty (_ ∷ txs) = ty ∷ txs
+tree-list-set (there x∈xs) ty (tx ∷ txs) = tx ∷ tree-list-set x∈xs ty txs
+
+add : ∀ {x y z : TreeShape} → (ix : Is-node x) → (iy : Is-node y) → (x⇒y : x ⇒ y) 
+        → Tree x → Tree z → Tree (add-shape ix iy x⇒y z)
+add node node self (node s txs) tz = node s (tz ∷ txs)
+add node node (tran {leaf} (child b∈xs) (tran () b⇒y)) tx tz
+add node node (tran {(node bs)} (child b∈xs) b⇒y) (node s txs) tz 
+    = node s (tree-list-set b∈xs (add node node b⇒y (get-list b∈xs txs) tz) txs)
+
+```
+
+
+
+
+```plaintext
+
+
+add-keep-valid : ∀ {x y : TreeShape} {tx : Tree x} → x ⇒ y → is-valid tx → Tree x
+add-validity : ∀ {x y : TreeShape} {tx : Tree x} {x⇒y : x ⇒ y} {v : is-valid tx}
+                    → is-valid (add-keep-valid x⇒y v)
+    
+```
+
+### For the meeting
+
+-- change boolean to specific datatypes
+0. Make sure we understand the code
+1. Establish the vocabulary:
+    - `is-in` means the object is in the file system
+    - `valid` means the object exists in the file system
+    - a `valid` object `is-in` the file system when marked with `true`
+2. Is it possible to lift `all-...` to `all ...` ? 
+3. I want to implement `add-keep-valid` as a sequence of `get-set`
+    so that I can reuse `get-set-prop` and `get-set-prop-other`
+4. Add new valid files to the system is not hard. The hard part is removing the trees.
+    We can implement remove as marking the respective nodes `false`
+    that will solve all the previous problems!
+5. The new `add` might leave a trail of `true`, how to define `other` files in this
+    context
+6. For remove it should be easy.
+
+
+## Step 3: to add new completely new trees
+
+## Failed attempts and random pieces of code
+
+```plaintext
 add : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
 add x⇒y tx = get-set x⇒y tx true
 
@@ -221,9 +390,31 @@ remove-valid-other : ∀ {x y z : TreeShape}
 remove-valid-other x⇒y x⇒z tx neq = get-set-prop-other x⇒y x⇒z tx false neq
 ```
 
-## Failed attempts and random pieces of code
 
 ```plaintext
+
+data all-not-in : ∀ {xs : List TreeShape} → TreeList xs → Set where
+    []  : all-not-in []
+    _∷_ : ∀ {x : TreeShape} {tx : Tree x} {xs : List TreeShape} {txs : TreeList xs}
+        → not-in tx → all-not-in txs → all-not-in (tx ∷ txs)
+        
+data all-is-valid : ∀ {xs : List TreeShape} → TreeList xs → Set 
+data is-valid : ∀ {x : TreeShape} → Tree x → Set
+
+data is-valid where
+    leaf        : is-valid (leaf live)
+    node-yes    : ∀ {xs : List TreeShape} {txs : TreeList xs} → 
+                all-is-valid txs → is-valid (node live txs)
+    node-no     : ∀ {xs : List TreeShape} {txs : TreeList xs} →
+                all-is-valid txs → all-not-in txs → is-valid (node erased txs)
+
+data all-is-valid where
+    [] : all-is-valid []
+    _∷_ : ∀ {x : TreeShape} {tx : Tree x} {xs : List TreeShape} {txs : TreeList xs}
+            → is-valid tx → all-is-valid txs → all-is-valid (tx ∷ txs)
+
+
+
 -- get-set-other-help {.(node xs)} {z} {a} {a′} {xs} {self} {x⇒z} {tx} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x = {!   !}
 -- get-set-other-help {y} {z} {a} {a′} {xs} {tran x₁ x⇒y} {x⇒z} {tx} {a′⇒z} {a⇒y} {a′∈xs} {a∈xs} {b} x = {!   !} 
 -- get-set-other-help  {y} {z} {a} {a} {xs} {tran {a} (child here) a⇒y} {tran {a} (child here) a⇒z} {node x₂ (x₃ ∷ x₄)}  x₁ = get-set-prop-other {a} {y} {z} {a⇒y} {a⇒z} {x₃}  x₅
