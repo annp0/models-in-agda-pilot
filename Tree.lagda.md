@@ -1,6 +1,8 @@
 ```agda
 open import Data.List using (List; []; _∷_)
-open import Relation.Binary.PropositionalEquality using (_≡_; refl; trans; sym)
+import Relation.Binary.PropositionalEquality as Eq
+open Eq using (_≡_; refl; trans; sym; cong)
+open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
 open import Relation.Nullary using (¬_)
 open import Data.Empty using (⊥; ⊥-elim)
 ```
@@ -382,14 +384,28 @@ add-valid-help node node here b⇒z (tx ∷ txs) ta (atx ∷ atxs) va lz = add-v
 add-valid-help node node (there b∈xs) b⇒z (tx ∷ txs) ta (atx ∷ atxs) va lz = atx ∷ add-valid-help node node b∈xs b⇒z txs ta atxs va lz
 add-erased-help (tx ∷ txs) b⇒z here (ntx ∷ ntxs) (atx ∷ atxs) = notin-to-erased tx b⇒z (erased-prop tx b⇒z atx ntx) 
 add-erased-help (tx ∷ txs) b⇒z (there b∈xs) (vtx ∷ vtxs) (ntx ∷ ntxs) = add-erased-help txs b⇒z b∈xs vtxs ntxs
-```
 
+get-set-new : ∀ {b} {xs} {c}
+    → (b∈xs : b ∈ xs) → (tc : Tree c) → (txs : TreeList xs)
+    → tc ≡ get-list (list-set-new b∈xs) (tree-list-set b∈xs tc txs)
+get-set-new here tc (tx ∷ txs) = refl
+get-set-new (there b∈xs) tc (tx ∷ txs) = get-set-new b∈xs tc txs
 
+get-set-lift : ∀ {b} {xs} {c} {z}
+    → (b∈xs : b ∈ xs) → (c∈xs : c ∈ xs) → (neq : b∈xs ≢ᵐ c∈xs) → (tz : Tree z) → (txs : TreeList xs)
+    → get-list c∈xs txs ≡ get-list (list-set-lift b∈xs c∈xs neq) (tree-list-set b∈xs tz txs) 
+get-set-lift here here neq tz (tx ∷ txs) = ⊥-elim (neq refl)
+get-set-lift here (there c∈xs) neq tz (tx ∷ txs) = refl
+get-set-lift (there b∈xs) here neq tz (tx ∷ txs) = refl
+-- GOAL: b∈xs ≢ᵐ c∈xs
+-- type of neq′: b∈xs ≢ᵐ c∈xs
+-- Why can't it refine?
+get-set-lift (there b∈xs) (there c∈xs) neq tz (tx ∷ txs) = get-set-lift b∈xs c∈xs {! neq′!} tz txs
+    where
+        neq′ : b∈xs ≢ᵐ c∈xs 
+        neq′ refl = neq refl
 
-## Failed attempts and random pieces of code
-
-```
--- this property is annoying...
+-- the `add` operation won't change the content of other files in the system
 add-other : ∀ {x y z a : TreeShape} → (ix : Is-node x) → (iy : Is-node y) → (x⇒y : x ⇒ y) 
         → (x⇒a : x ⇒ a) → (leq : x⇒a ≰ᵖ x⇒y) → (tx : Tree x) → (tz : Tree z)
         → Is-live x⇒y tx 
@@ -399,14 +415,25 @@ add-other node node self self leq tx tz x = ⊥-elim (leq zero)
 add-other node node self (tran (child _) x⇒a) leq (node _ _) tz x = refl
 add-other node node (tran (child _) _) self leq (node _ _) tz x = ⊥-elim (leq zero)
 add-other node node (tran {leaf} (child _) (tran () _)) (tran (child c∈xs) c⇒a) leq (node s txs) tz x
-add-other node node (tran {b@(node bs)} (child b∈xs) b⇒y) (tran (child c∈xs) c⇒a) leq (node s txs) tz x with (b∈xs ≡ᵐ? c∈xs)
-... | yes refl = {!   !}
--- add-other node node {!  !} c⇒a {!   !} (get-list b∈xs txs) tz {!   !} 
-... | no neq = {!   !} 
-    
---add-other-help txs c⇒a b⇒y node c∈xs b∈xs s tz leq
+add-other {_} {_} {z} node node (tran {b@(node bs)} (child b∈xs) b⇒y) (tran (child c∈xs) c⇒a) leq (node s txs) tz x with (b∈xs ≡ᵐ? c∈xs)
+... | yes refl = begin 
+                    get-status c⇒a (get-list b∈xs txs)      
+                ≡⟨ add-other node node b⇒y c⇒a leq′ (get-list b∈xs txs) tz x ⟩
+                    get-status (add-shape-lift node node b⇒y c⇒a (λ le → leq (succ le)) z) (add node node b⇒y (get-list b∈xs txs) tz)
+                ≡⟨ cong (λ x → get-status (add-shape-lift node node b⇒y c⇒a (λ le → leq (succ le)) z) x) (get-set-new b∈xs (add node node b⇒y (get-list b∈xs txs) tz) txs) ⟩
+                    refl
+                where
+                    leq′ : c⇒a ≰ᵖ b⇒y
+                    leq′ le = leq (succ le)
+... | no neq = begin
+        get-status c⇒a (get-list c∈xs txs)
+        ≡⟨ cong (λ x → get-status c⇒a x) (get-set-lift b∈xs c∈xs neq (add node node b⇒y (get-list b∈xs txs) tz) txs) ⟩
+        refl 
 ```
 
+## Failed attempts and random pieces of code
+
+-- this property is annoying...
 
 ```agda
 get-set         : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Status → Tree x
