@@ -7,6 +7,78 @@ open import Relation.Nullary using (¬_)
 open import Data.Empty using (⊥; ⊥-elim)
 ```
 
+## Specifications
+
+1. A FileSystem is abstract (i.e. not concrete)
+2. A File System has two main concepts:
+  a. directories
+  b. files
+3. files live 'in' a directory (its parent)
+4. directories may also live in another directory (its parent)
+5. there is a root directory that has no parent
+6. a directory is valid if its eventual parent is the root directory
+7. a file is valid if it is in a valid directory
+8. one can add files and directories to a file system (and get a new fs)
+9. one can remove files and directories from a fs (and get a new fs)
+10. adding X to an FS and then immediately deleting it yiels an equivalent fs
+11. a derived concept is that of path, which is the inverse graph of 'parent'
+
+## Interpretation of the specifications
+
+A. A `FileSystem` is modeled as a rose tree, where `directory`
+    corresponds to `node` and `file` corresponds to `leaf`. Because of 
+    technical difficulties, we cannot just "remove" a subtree
+    from a tree. Therefore, we take a compromise: we mark each object in
+    the tree with a `Status` in which it indicates whether it is `erased`
+    or not. We say a tree is `Valid` when: 
+        (1) All of its children is `Valid`
+        (2) For every `erased` node, all of its children must be `erased` as well. 
+    A `FileSystem` is then a `Valid` `Tree`.
+    Specification 1, 2, 3, 4, 5, 6, 7 are automatically satisfied.
+
+B. `Tree` is indexed by `TreeShape`, and `TreeShape` acts as paths.
+    This satisfies Specification 11.
+    Notice that the paths here also serves as proof of membership.
+    (Maybe the advantage of dependent types?)
+    
+C. "Removing" a tree, in this context, is just marking a node
+    as `erased`. We proved:
+        (1) `erase` something in a valid tree will return a valid tree
+        (2) this operation won't change the content of other files in the system 
+    Since no change to the tree structure is made, there is no change on paths.
+    This satisfies Specification 9.
+
+D. "Adding" a tree will literally add a new subtree. Therefore, it will
+    change the tree structure (`add-shape`). With this function comes with
+    two properties:
+        (1) `add-shape-new`: gives the path to the freshly added subtree
+        (2) `add-shape-lift`: lifts an original path to a new path in the
+            new tree
+    On tree level, we proved that: 
+        (3) adding a valid tree to a valid tree would return
+            a valid tree still
+        (4) this operation won't change the content of other files in the
+            system
+    This satisfies Specification 8.
+
+E. Combining (C2) and (D4) gives us Specification 10.
+
+## APIs
+
+| Specification | Implementation |
+| ------------- | -------------- |
+| Path          | `TreeShape`    |
+| Tree Structure| `Tree`         |
+| File System   | `Valid`        |
+| Remove        | `erase`        |
+| Property (C1) | `erase-valid`  |
+| Property (C2) | `erase-prop`   |
+| Add           | `add`          |
+| Property (D3) | `add-valid`    |
+| Property (D4) | `add-other`    |
+
+## Implementation
+
 We use the simplified definition of `Dec`.
 
 ```agda
@@ -130,7 +202,8 @@ Is-live x⇒y tx = get-status x⇒y tx ≡ live
 notin-to-erased : ∀ {x y : TreeShape} → (tx : Tree x) → (x⇒y : x ⇒ y)
                     → Not-in (get x⇒y tx) → get-status x⇒y tx ≡ erased
 notin-to-erased-help : ∀ {y z : TreeShape} {xs : List TreeShape} → (y⇒z : y ⇒ z)
-                    → (y∈xs : y ∈ xs) → (txs : TreeList xs) → Not-in (get y⇒z (get-list y∈xs txs)) 
+                    → (y∈xs : y ∈ xs) → (txs : TreeList xs) 
+                    → Not-in (get y⇒z (get-list y∈xs txs)) 
                     → get-status y⇒z (get-list y∈xs txs) ≡ erased
 notin-to-erased .(leaf erased) self leaf = refl
 notin-to-erased .(node erased _) self node = refl
@@ -154,9 +227,10 @@ erase-all-help (tx ∷ txs) = (erase-all tx) ∷ (erase-all-help txs)
 -- property of erase-all : all children in the erased tree are erased
 erase-all-prop : ∀ {x y : TreeShape} → (tx : Tree x) → (x⇒y : x ⇒ y)
                 → get-status x⇒y (erase-all tx) ≡ erased
-erase-all-prop-help : ∀ {y z : TreeShape} {xs : List TreeShape} → (txs : TreeList xs) 
-                        → (y⇒z : y ⇒ z) → (y∈xs : y ∈ xs)
-                        → get-status y⇒z (get-list y∈xs (erase-all-help txs)) ≡ erased
+erase-all-prop-help : ∀ {y z : TreeShape} {xs : List TreeShape} 
+                → (txs : TreeList xs) 
+                → (y⇒z : y ⇒ z) → (y∈xs : y ∈ xs)
+                → get-status y⇒z (get-list y∈xs (erase-all-help txs)) ≡ erased
 erase-all-prop (leaf _) self = refl
 erase-all-prop (node _ _) self = refl
 erase-all-prop (node _ txs) (tran (child y∈xs) y⇒z) = erase-all-prop-help txs y⇒z y∈xs
@@ -165,8 +239,10 @@ erase-all-prop-help (ty ∷ txs) y⇒z (there y∈xs) = erase-all-prop-help txs 
 
 -- property of erase-all : a completely erased tree is valid
 erase-all-valid : ∀ {x : TreeShape} → (tx : Tree x) → Valid (erase-all tx)
-erase-all-help-not-in : ∀ {xs : List TreeShape} → (txs : TreeList xs) → All Not-in (erase-all-help txs)
-erase-all-help-valid : ∀ {xs : List TreeShape} → (txs : TreeList xs) → All-valid (erase-all-help txs)
+erase-all-help-not-in : ∀ {xs : List TreeShape} → (txs : TreeList xs) 
+                    → All Not-in (erase-all-help txs)
+erase-all-help-valid : ∀ {xs : List TreeShape} → (txs : TreeList xs) 
+                    → All-valid (erase-all-help txs)
 erase-all-valid (leaf x) = leaf
 erase-all-valid (node s txs) = node-erased (erase-all-help-valid txs) (erase-all-help-not-in txs)
 erase-all-help-valid [] = []
@@ -176,7 +252,8 @@ erase-all-help-not-in (leaf _ ∷ txs) = leaf ∷ erase-all-help-not-in txs
 erase-all-help-not-in (node _ _ ∷ txs) = node ∷ erase-all-help-not-in txs
 
 erase : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
-erase-list : ∀ {y z : TreeShape} {xs : List TreeShape} → y ⇒ z → y ∈ xs → TreeList xs → TreeList xs
+erase-list : ∀ {y z : TreeShape} {xs : List TreeShape} 
+        → y ⇒ z → y ∈ xs → TreeList xs → TreeList xs
 erase self tx = erase-all tx
 erase (tran {y} (child y∈xs) y⇒z) (node s txs) = node s (erase-list y⇒z y∈xs txs)
 erase-list y⇒z here (tx ∷ txs) = erase y⇒z tx ∷ txs
@@ -251,11 +328,11 @@ here ≡ᵐ? here = yes refl
 here ≡ᵐ? there y∈xs = no λ ()
 there x∈xs ≡ᵐ? here = no λ () 
 there x∈xs ≡ᵐ? there y∈xs with x∈xs ≡ᵐ? y∈xs 
-...                         | yes refl = yes refl
-...                         | no neq = no neq′ 
-                                    where
-                                        neq′ : there (x∈xs) ≢ᵐ there (y∈xs)
-                                        neq′ refl = neq refl
+... | yes refl = yes refl
+... | no neq = no neq′ 
+        where
+            neq′ : there (x∈xs) ≢ᵐ there (y∈xs)
+            neq′ refl = neq refl
 ``` 
 
 Some operation on lists, and related properties
@@ -271,6 +348,10 @@ list-set-new : ∀ {x y : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ x
 list-set-new here = here
 list-set-new (there x∈xs) = there (list-set-new x∈xs)
 
+eq-help : ∀ {x y z : TreeShape} {xs : List TreeShape} {x∈xs : x ∈ xs} {y∈xs : y ∈ xs}
+        → x∈xs ≡ᵐ y∈xs → there {x} {z} {xs} x∈xs ≡ᵐ there {y} {z} {xs} y∈xs
+eq-help refl = refl
+
 -- `...-lift` gives the paths to other unmodified objects
 -- It 'lifts' the original path to a new path
 list-set-lift : ∀ {x y z : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ xs) → (y∈xs : y ∈ xs) 
@@ -281,7 +362,7 @@ list-set-lift (there x∈xs) here neq = here
 list-set-lift (there x∈xs) (there y∈xs) neq = there (list-set-lift x∈xs y∈xs neq′)
     where 
         neq′ : x∈xs ≢ᵐ y∈xs
-        neq′ refl = neq refl
+        neq′ eq = neq (eq-help eq)
 
 -- add a new element at the head
 list-add : TreeShape → List TreeShape → List TreeShape 
@@ -299,11 +380,11 @@ add-shape {node xs} node node (tran {leaf} (child y∈xs) (tran () y⇒z)) a
 add-shape {node xs} node node (tran {node x} (child y∈xs) y⇒z) a = node (list-set y∈xs (add-shape node node y⇒z a))
 ```
 
-We need to state lift property for `add-shape`.
+We need to state the lift property for `add-shape`.
 Since add-shape modifies objects along the path,
 we need a relation `(a → b) ≤ᵖ (a → b → c → ...)`
 
-```
+```agda
 data _≤ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set where
     zero : ∀ {x y : TreeShape} {x⇒x : x ⇒ x} {x⇒y : x ⇒ y} → x⇒x ≤ᵖ x⇒y
     succ : ∀ {x y z a : TreeShape} {y⇒a : y ⇒ a} {y⇒z : y ⇒ z} {y∈x : y ∈ᶜ x} → 
@@ -341,7 +422,7 @@ add-shape-new node node (tran {node ys} (child y∈xs) y⇒a) z =
 
 With things settled on `TreeShape`, we proceed to `Tree`
 
-``` 
+```agda
 tree-list-set : ∀ {x y : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ xs) 
                 → Tree y → TreeList xs → TreeList (list-set x∈xs y)
 tree-list-set here ty (_ ∷ txs) = ty ∷ txs
@@ -384,23 +465,30 @@ add-valid-help node node here b⇒z (tx ∷ txs) ta (atx ∷ atxs) va lz = add-v
 add-valid-help node node (there b∈xs) b⇒z (tx ∷ txs) ta (atx ∷ atxs) va lz = atx ∷ add-valid-help node node b∈xs b⇒z txs ta atxs va lz
 add-erased-help (tx ∷ txs) b⇒z here (ntx ∷ ntxs) (atx ∷ atxs) = notin-to-erased tx b⇒z (erased-prop tx b⇒z atx ntx) 
 add-erased-help (tx ∷ txs) b⇒z (there b∈xs) (vtx ∷ vtxs) (ntx ∷ ntxs) = add-erased-help txs b⇒z b∈xs vtxs ntxs
+```
 
-get-set-new : ∀ {b} {xs} {c}
+To prove the final property `add-other`, we need two helper functions.
+
+```agda
+-- `list-set-new` gives a path to the freshly modified object
+-- `list-set-new-prop` states that this path points to the freshly modified object
+list-set-new-prop : ∀ {b} {xs} {c}
     → (b∈xs : b ∈ xs) → (tc : Tree c) → (txs : TreeList xs)
     → tc ≡ get-list (list-set-new b∈xs) (tree-list-set b∈xs tc txs)
-get-set-new here tc (tx ∷ txs) = refl
-get-set-new (there b∈xs) tc (tx ∷ txs) = get-set-new b∈xs tc txs
+list-set-new-prop here tc (tx ∷ txs) = refl
+list-set-new-prop (there b∈xs) tc (tx ∷ txs) = list-set-new-prop b∈xs tc txs
 
-get-set-lift : ∀ {b} {xs} {c} {z}
+-- `list-set-lift` lifts an original path to a path in the modified list, 
+--  given that the path pointing to the modified object is different
+-- `list-set-new-prop` states that this path points the same object
+--  as the previous one
+list-set-lift-prop : ∀ {b} {xs} {c} {z}
     → (b∈xs : b ∈ xs) → (c∈xs : c ∈ xs) → (neq : b∈xs ≢ᵐ c∈xs) → (tz : Tree z) → (txs : TreeList xs)
     → get-list c∈xs txs ≡ get-list (list-set-lift b∈xs c∈xs neq) (tree-list-set b∈xs tz txs) 
-get-set-lift here here neq tz (tx ∷ txs) = ⊥-elim (neq refl)
-get-set-lift here (there c∈xs) neq tz (tx ∷ txs) = refl
-get-set-lift (there b∈xs) here neq tz (tx ∷ txs) = refl
--- GOAL: b∈xs ≢ᵐ c∈xs
--- type of neq′: b∈xs ≢ᵐ c∈xs
--- Why can't it refine?
-get-set-lift (there b∈xs) (there c∈xs) neq tz (tx ∷ txs) = get-set-lift b∈xs c∈xs {! neq′!} tz txs
+list-set-lift-prop here here neq tz (tx ∷ txs) = ⊥-elim (neq refl)
+list-set-lift-prop here (there c∈xs) neq tz (tx ∷ txs) = refl
+list-set-lift-prop (there b∈xs) here neq tz (tx ∷ txs) = refl
+list-set-lift-prop (there b∈xs) (there c∈xs) neq tz (tx ∷ txs) = list-set-lift-prop b∈xs c∈xs (λ z → neq (eq-help z)) tz txs
     where
         neq′ : b∈xs ≢ᵐ c∈xs 
         neq′ refl = neq refl
@@ -417,17 +505,20 @@ add-other node node (tran (child _) _) self leq (node _ _) tz x = ⊥-elim (leq 
 add-other node node (tran {leaf} (child _) (tran () _)) (tran (child c∈xs) c⇒a) leq (node s txs) tz x
 add-other {_} {_} {z} node node (tran {b@(node bs)} (child b∈xs) b⇒y) (tran (child c∈xs) c⇒a) leq (node s txs) tz x with (b∈xs ≡ᵐ? c∈xs)
 ... | yes refl = begin 
-                    get-status c⇒a (get-list b∈xs txs)      
-                ≡⟨ add-other node node b⇒y c⇒a leq′ (get-list b∈xs txs) tz x ⟩
-                    get-status (add-shape-lift node node b⇒y c⇒a (λ le → leq (succ le)) z) (add node node b⇒y (get-list b∈xs txs) tz)
-                ≡⟨ cong (λ x → get-status (add-shape-lift node node b⇒y c⇒a (λ le → leq (succ le)) z) x) (get-set-new b∈xs (add node node b⇒y (get-list b∈xs txs) tz) txs) ⟩
+                    get-status c⇒a tb      
+                ≡⟨ add-other node node b⇒y c⇒a leq′ tb tz x ⟩
+                    λ′ tb′
+                ≡⟨ cong λ′ (list-set-new-prop b∈xs tb′ txs) ⟩
                     refl
                 where
                     leq′ : c⇒a ≰ᵖ b⇒y
                     leq′ le = leq (succ le)
+                    tb = get-list b∈xs txs
+                    λ′ = (λ x → get-status (add-shape-lift node node b⇒y c⇒a (λ le → leq (succ le)) z) x)
+                    tb′ = (add node node b⇒y (get-list b∈xs txs) tz)
 ... | no neq = begin
         get-status c⇒a (get-list c∈xs txs)
-        ≡⟨ cong (λ x → get-status c⇒a x) (get-set-lift b∈xs c∈xs neq (add node node b⇒y (get-list b∈xs txs) tz) txs) ⟩
+        ≡⟨ cong (λ x → get-status c⇒a x) (list-set-lift-prop b∈xs c∈xs neq (add node node b⇒y (get-list b∈xs txs) tz) txs) ⟩
         refl 
 ```
 
@@ -435,7 +526,7 @@ add-other {_} {_} {z} node node (tran {b@(node bs)} (child b∈xs) b⇒y) (tran 
 
 -- this property is annoying...
 
-```agda
+```plaintext
 get-set         : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Status → Tree x
 get-set-help    : ∀ {y z : TreeShape} {xs : List TreeShape} → y ∈ xs 
                 → y ⇒ z → TreeList xs → Status → TreeList xs
@@ -485,7 +576,7 @@ x⇒y ≢ᵖ x⇒z = ¬ (x⇒y ≡ᵖ x⇒z)
 Now we are ready to show that the `get-set` operation
 will leave other files in the system untouched.
 
-```agda
+```plaintext
 get-set-prop-other  : ∀ {x y z : TreeShape} → 
                     (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) → (tx : Tree x)
                     → (b : Status) → x⇒y ≢ᵖ x⇒z
@@ -950,4 +1041,4 @@ rem-sameᵗ (child (inᶜ p)) (trans x∈a a≺y) p≠q =
     {!   !}
 rem-sameᵗ (trans (inᶜ x∈y) p) (child (inᶜ x∈y')) p≠q = child {!   !}
 rem-sameᵗ (trans x p) (trans x₁ q) p≠q = {!   !}
-```
+``` 
