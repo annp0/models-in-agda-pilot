@@ -489,9 +489,6 @@ list-set-lift-prop here here neq tz (tx ∷ txs) = ⊥-elim (neq refl)
 list-set-lift-prop here (there c∈xs) neq tz (tx ∷ txs) = refl
 list-set-lift-prop (there b∈xs) here neq tz (tx ∷ txs) = refl
 list-set-lift-prop (there b∈xs) (there c∈xs) neq tz (tx ∷ txs) = list-set-lift-prop b∈xs c∈xs (λ z → neq (eq-help z)) tz txs
-    where
-        neq′ : b∈xs ≢ᵐ c∈xs 
-        neq′ refl = neq refl
 
 -- the `add` operation won't change the content of other files in the system
 add-other : ∀ {x y z a : TreeShape} → (ix : Is-node x) → (iy : Is-node y) → (x⇒y : x ⇒ y) 
