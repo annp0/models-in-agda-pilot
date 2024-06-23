@@ -200,6 +200,24 @@ data _∈_ : TreeShape → List TreeShape → Set where
     here    : ∀ {x} {xs} → x ∈ (x ∷ xs)
     there   : ∀ {x y xs} → x ∈ xs → x ∈ (y ∷ xs)
 
+data _≡ᵐ_ : ∀ {x y xs} → x ∈ xs → y ∈ xs → Set where
+    refl : ∀ {x xs} {x∈xs : x ∈ xs} → x∈xs ≡ᵐ x∈xs
+
+_≢ᵐ_ : ∀ {x y xs} → x ∈ xs → y ∈ xs → Set
+x∈xs ≢ᵐ y∈xs = ¬ (x∈xs ≡ᵐ y∈xs)
+
+-- a decidable algorithm
+_≡ᵐ?_ : ∀ {x y xs} (x∈xs : x ∈ xs) (y∈xs : y ∈ xs) → Dec (x∈xs ≡ᵐ y∈xs)
+here ≡ᵐ? here = yes refl
+here ≡ᵐ? there y∈xs = no λ ()
+there x∈xs ≡ᵐ? here = no λ () 
+there x∈xs ≡ᵐ? there y∈xs with x∈xs ≡ᵐ? y∈xs 
+... | yes refl = yes refl
+... | no neq = no neq′ 
+        where
+            neq′ : there (x∈xs) ≢ᵐ there (y∈xs)
+            neq′ refl = neq refl
+
 -- this is necessary to expose the lower sturcture (for the termination checker)
 data _∈ᶜ_ : TreeShape → TreeShape → Set where
     child : ∀ {t ts} → (t ∈ ts) → t ∈ᶜ (node ts) 
@@ -207,6 +225,14 @@ data _∈ᶜ_ : TreeShape → TreeShape → Set where
 data _⇒_ : TreeShape → TreeShape → Set where
     self : ∀ {t} → t ⇒ t
     tran : ∀ {y x z} → y ∈ᶜ x → y ⇒ z → x ⇒ z
+
+data _≤ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set where
+    zero : ∀ {x y} {x⇒x : x ⇒ x} {x⇒y : x ⇒ y} → x⇒x ≤ᵖ x⇒y
+    succ : ∀ {x y z a} {y⇒a : y ⇒ a} {y⇒z : y ⇒ z} {y∈x : y ∈ᶜ x} → 
+            y⇒a ≤ᵖ y⇒z → (tran y∈x y⇒a) ≤ᵖ (tran y∈x y⇒z)
+
+_≰ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set
+x⇒y ≰ᵖ x⇒z = ¬ (x⇒y ≤ᵖ x⇒z)
 
 -- A basic property for _⇒_
 _+ᵖ_ : ∀ {x y z} → x ⇒ y → y ⇒ z → x ⇒ z
@@ -217,36 +243,14 @@ tran a∈xs a⇒y +ᵖ y⇒z = tran a∈xs (a⇒y +ᵖ y⇒z)
 A tree is valid when all the children of an erased node is erased.
 
 ```agda
--- Not really necessary
-data Not-in : ∀ {x} → Tree x → Set where
-    leaf : Not-in (leaf erased)
-    node : ∀ {xs} {txs : TreeList xs} → Not-in (node erased txs)
-
+-- is-node
 data ○ : TreeShape → Set where
     node : ∀ {xs} → ○ (node xs)
-
-data Is-node : TreeShape → Set where
-    node : ∀ {xs} → Is-node (node xs)
 
 data All (P : ∀ {x} → Tree x → Set) : ∀ {xs} → TreeList xs → Set where
     []  : All P []
     _∷_ : ∀ {x} {tx : Tree x} {xs} {txs : TreeList xs} → P tx → All P txs 
         → All P (tx ∷ txs)
-
--- cannot use `All Valid xs` because of termination checking
-data All-valid : ∀ {xs} → TreeList xs → Set 
-data Valid : ∀ {x} → Tree x → Set
-
-data Valid where
-    leaf        : ∀ {s} → Valid (leaf s)
-    node-live   : ∀ {xs} {txs : TreeList xs} → All-valid txs → Valid (node live txs)
-    node-erased : ∀ {xs} {txs : TreeList xs} → All-valid txs → All Not-in txs 
-                → Valid (node erased txs)
-
-data All-valid where
-    []  : All-valid []
-    _∷_ : ∀ {x} {tx : Tree x} {xs} {txs : TreeList xs} → Valid tx → All-valid txs
-        → All-valid (tx ∷ txs)
 ```
 
 Basic functions to traverse the content of the tree.
@@ -268,12 +272,12 @@ get-status : ∀ {x y} → x ⇒ y → Tree x → Status
 get-status x⇒y tx = status (get x⇒y tx)
 
 -- is-erased
-⊗ : ∀ {x} → Tree x → Set
-⊗ tx = status tx ≡ erased
+⊗ : ∀ {x y} → (x⇒y : x ⇒ y) → Tree x → Set
+⊗ x⇒y tx = get-status x⇒y tx ≡ erased
 
 -- is-live
-⊙ : ∀ {x} → Tree x → Set
-⊙ tx = status tx ≡ live
+⊙ : ∀ {x y} → (x⇒y : x ⇒ y) → Tree x → Set
+⊙ x⇒y tx = get-status x⇒y tx ≡ live
 
 get-all : ∀ {x xs} {P : ∀ {z} → Tree z → Set} {txs : TreeList xs}
     → (x∈xs : x ∈ xs) → All P txs → P (get-list x∈xs txs)
@@ -296,11 +300,11 @@ get-map : ∀ {x y} → (tx : Tree x) → (x⇒y : x ⇒ y) → (f : Status → 
 get-map tx self f = map-status f tx
 get-map (node s (tx ∷ txs)) (tran (child here) y⇒z) f = get-map tx y⇒z f
 get-map (node s (tx ∷ txs)) (tran (child (there y∈xs)) y⇒z) f = begin 
-    get-status y⇒z (get-list y∈xs (map-list f txs))
+        get-status y⇒z (get-list y∈xs (map-list f txs))
     ≡⟨ cong (λ z → get-status y⇒z z) (get-map-list f y∈xs txs) ⟩ 
-    get-status y⇒z (map f (get-list y∈xs txs)) 
+        get-status y⇒z (map f (get-list y∈xs txs)) 
     ≡⟨ get-map (get-list y∈xs txs) y⇒z f ⟩
-    f (get-status y⇒z (get-list y∈xs txs))
+        f (get-status y⇒z (get-list y∈xs txs))
     ∎
 
 get-+ᵖ : ∀ {x y z} (x⇒y : x ⇒ y) (y⇒z : y ⇒ z) (tx : Tree x) 
@@ -313,27 +317,27 @@ set-list : ∀ {x xs} → (x∈xs : x ∈ xs) → Tree x → TreeList xs → Tre
 set-list here tx (_ ∷ txs) = tx ∷ txs
 set-list (there x∈xs) tx (ty ∷ txs) = ty ∷ set-list x∈xs tx txs
 
+set-list-other : ∀ {x y xs} {x∈xs : x ∈ xs} {y∈xs : y ∈ xs}
+    → x∈xs ≢ᵐ y∈xs → (tx : Tree x) → (txs : TreeList xs) 
+    → get-list y∈xs txs ≡ get-list y∈xs (set-list x∈xs tx txs)
+set-list-other {_} {_} {_} {here} {here} neq _ _ = ⊥-elim (neq refl)
+set-list-other {_} {_} {_} {here} {there y∈xs} neq tx (tz ∷ txs) = refl
+set-list-other {_} {_} {_} {there x∈xs} {here} neq tx (tz ∷ txs) = refl
+set-list-other {_} {_} {_} {there x∈xs} {there y∈xs} neq tx (tz ∷ txs) = set-list-other neq′ tx txs
+    where
+        neq′ : x∈xs ≢ᵐ y∈xs
+        neq′ refl = neq refl
+
+set-list-get : ∀ {x xs} {tx : Tree x} → (x∈xs : x ∈ xs) → (txs : TreeList xs) 
+    → tx ≡ get-list x∈xs (set-list x∈xs tx txs)
+set-list-get {_} {_} here (tz ∷ txs) = refl
+set-list-get {_} {_} (there x∈xs) (tz ∷ txs) = set-list-get (x∈xs) txs
+
 -- if the replaced element has the same property, then the `All` property is preserved
 All-set : ∀ {x xs} {P : ∀ {z} → Tree z → Set} {tx : Tree x} {txs : TreeList xs}
     → (x∈xs : x ∈ xs) → P tx → All P txs → All P (set-list x∈xs tx txs)
 All-set here Px (_ ∷ axs) = Px ∷ axs
 All-set (there x∈xs) Px (az ∷ axs) = az ∷ All-set x∈xs Px axs
-
-Is-live : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
-Is-live x⇒y tx = get-status x⇒y tx ≡ live
-
--- convert not-in to erased
-notin-to-erased : ∀ {x y : TreeShape} → (tx : Tree x) → (x⇒y : x ⇒ y)
-                    → Not-in (get x⇒y tx) → get-status x⇒y tx ≡ erased
-notin-to-erased-help : ∀ {y z : TreeShape} {xs : List TreeShape} → (y⇒z : y ⇒ z)
-                    → (y∈xs : y ∈ xs) → (txs : TreeList xs) 
-                    → Not-in (get y⇒z (get-list y∈xs txs)) 
-                    → get-status y⇒z (get-list y∈xs txs) ≡ erased
-notin-to-erased .(leaf erased) self leaf = refl
-notin-to-erased .(node erased _) self node = refl
-notin-to-erased (node s txs) (tran (child y∈xs) y⇒z) n = notin-to-erased-help y⇒z y∈xs txs n
-notin-to-erased-help y⇒z here (tx ∷ txs) n = notin-to-erased tx y⇒z n
-notin-to-erased-help y⇒z (there y∈xs) (tx ∷ txs) n =  notin-to-erased-help y⇒z y∈xs txs n
 ```
 
 ```agda
@@ -351,8 +355,8 @@ V-map {f} {_} {tx} ↡f Vx x⇒y y⇒z = ≤ˢ-≡
 -- construct validity from `All` properties
 All-V : ∀ {s xs} {txs : TreeList xs} → All (λ tx → status tx ≤ˢ s) txs → All V txs → V (node s txs)
 All-V as bs self self = s≤s
-All-V {_} {_} {txs} as bs self (tran (child y∈xs) y⇒z) = tran-≤ˢ (get-all y∈xs bs self y⇒z) (get-all y∈xs as)
-All-V {_} {_} {txs} as bs (tran (child y∈xs) y⇒z) z⇒a = get-all y∈xs bs y⇒z z⇒a
+All-V as bs self (tran (child y∈xs) y⇒z) = tran-≤ˢ (get-all y∈xs bs self y⇒z) (get-all y∈xs as)
+All-V as bs (tran (child y∈xs) y⇒z) z⇒a = get-all y∈xs bs y⇒z z⇒a
 
 -- construct `All` from arbitrary qualifiers
 ∀-All : ∀ {xs} {txs : TreeList xs} {P : ∀ {y} → Tree y → Set} 
@@ -395,10 +399,28 @@ erase-V (tran (child y∈xs) y⇒z) (node s txs) Vx = All-V
         ty = get-list y∈xs txs
         ty′ = erase y⇒z ty
         Vy′ = erase-V y⇒z ty
-        Vxs = V-All₂ Vx
         ≤xs = V-All₁ Vx
+        Vxs = V-All₂ Vx
         Vy = get-all y∈xs Vxs
         ≤y′ = tran-≤ˢ (erase-↓ y⇒z ty) (get-all y∈xs ≤xs) 
+
+erase-other : ∀ {x y z} → (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) → x⇒y ≰ᵖ x⇒z
+    → (tx : Tree x)
+    → get-status x⇒z tx ≡ get-status x⇒z (erase x⇒y tx)
+erase-other self x⇒z n tx = ⊥-elim (n zero)
+erase-other (tran (child a∈xs) a⇒y) self n (node s _) = refl
+erase-other (tran (child a∈xs) a⇒y) (tran (child b∈xs) b⇒z) n (node s txs) with a∈xs ≡ᵐ? b∈xs 
+... | yes refl = sym (begin 
+        get-status b⇒z (get-list a∈xs (set-list a∈xs (erase a⇒y (get-list a∈xs txs)) txs))
+    ≡⟨ sym (cong (λ x → get-status b⇒z x) (set-list-get a∈xs txs)) ⟩
+        get-status b⇒z (erase a⇒y (get-list a∈xs txs)) 
+    ≡⟨ sym (erase-other a⇒y b⇒z n′ (get-list a∈xs txs)) ⟩
+        get-status b⇒z (get-list a∈xs txs)
+    ∎)
+    where 
+        n′ : a⇒y ≰ᵖ b⇒z
+        n′ ≤ = n (succ ≤)
+... | no neq = cong (λ x → get-status b⇒z x) (set-list-other neq ((erase a⇒y (get-list a∈xs txs))) txs)
 ```
 
 The erase function change the status of the node and all of its children
@@ -1228,4 +1250,4 @@ rem-sameᵗ (child (inᶜ p)) (trans x∈a a≺y) p≠q =
 rem-sameᵗ (trans (inᶜ x∈y) p) (child (inᶜ x∈y')) p≠q = child {!   !}
 rem-sameᵗ (trans x p) (trans x₁ q) p≠q = {!   !}
 ``` 
- 
+  
