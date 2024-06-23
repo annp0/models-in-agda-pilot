@@ -359,7 +359,7 @@ All-V as bs self (tran (child y∈xs) y⇒z) =
     tran-≤ˢ (get-all y∈xs bs self y⇒z) (get-all y∈xs as)
 All-V as bs (tran (child y∈xs) y⇒z) z⇒a = get-all y∈xs bs y⇒z z⇒a
 
--- construct `All` from arbitrary qualifiers
+-- construct `All` from arbitrary quantifiers
 ∀-All : ∀ {xs} {txs : TreeList xs} {P : ∀ {y} → Tree y → Set} 
     → (∀ {x} → (x∈xs : x ∈ xs) → P (get-list x∈xs txs)) → All P txs
 ∀-All {[]} {[]} {P} prop = []
@@ -398,6 +398,11 @@ erase-↓ (tran (child _) _) (node _ _) = s≤s
 erase-V : ∀ {x y : TreeShape} → (x⇒y : x ⇒ y) → (tx : Tree x) 
     → V tx → V (erase x⇒y tx)
 erase-V self tx Vx = V-map (↓-↡ ↓h) Vx
+-- proof approach: 
+-- 1. project to previous `All` properties
+-- 2. for each `All` property, reconstruct them for the goal
+-- 3. convert those two `All` properties to validity
+-- the same goes for add-V
 erase-V (tran (child y∈xs) y⇒z) (node s txs) Vx = All-V 
     (All-set y∈xs ≤y′ ≤xs) (All-set y∈xs (Vy′ Vy) Vxs)
     where
@@ -409,6 +414,7 @@ erase-V (tran (child y∈xs) y⇒z) (node s txs) Vx = All-V
         Vy = get-all y∈xs Vxs
         ≤y′ = tran-≤ˢ (erase-↓ y⇒z ty) (get-all y∈xs ≤xs) 
 
+-- simplified things with decidables (avoided local induction)
 erase-other : ∀ {x y z} → (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) → x⇒y ≰ᵖ x⇒z
     → (tx : Tree x)
     → get-status x⇒z tx ≡ get-status x⇒z (erase x⇒y tx)
