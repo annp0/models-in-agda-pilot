@@ -1,7 +1,7 @@
 ```agda
 open import Data.List using (List; []; _∷_)
 import Relation.Binary.PropositionalEquality as Eq
-open Eq using (_≡_; refl; trans; sym; cong)
+open Eq using (_≡_; _≢_; refl; trans; sym; cong)
 open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
 open import Relation.Nullary using (¬_)
 open import Data.Empty using (⊥; ⊥-elim)
@@ -84,7 +84,7 @@ We use the simplified definition of `Dec`.
 ```agda
 data Dec (A : Set) : Set where
     yes : A → Dec A
-    no : ¬ A → Dec A
+    no  : ¬ A → Dec A
 ```
 
 To get a content-independent path, we define the shape of a tree.
@@ -112,93 +112,217 @@ data TreeList : List TreeShape → Set
 data Tree : TreeShape → Set
 
 data TreeList where
-    []      : TreeList []
-    _∷_     : ∀ {x : TreeShape} {xs : List TreeShape} 
-            → Tree x → TreeList xs → TreeList (x ∷ xs)  
+    []  : TreeList []
+    _∷_ : ∀ {x xs} → Tree x → TreeList xs → TreeList (x ∷ xs)  
 
 data Tree where
-    leaf    : Status → Tree leaf
-    node    : ∀ {ts : List TreeShape} 
-            → Status → TreeList ts → Tree (node ts) 
+    leaf : Status → Tree leaf
+    node : ∀ {ts} → Status → TreeList ts → Tree (node ts) 
+```
+
+There is a natural order on `Status`.
+
+```agda
+data _≤ˢ_ : Status → Status → Set where
+    s≤s : ∀ {s} → s ≤ˢ s
+    e≤l : erased ≤ˢ live  
+
+-- monotone decreasing functions (↓f can only erase objects)
+↓ : (Status → Status) → Set
+↓ f = ∀ {s} → f s ≤ˢ s 
+
+-- monotone (mathematically)
+↡ : (Status → Status) → Set
+↡ f = ∀ {a b} → a ≤ˢ b → f a ≤ˢ f b
+
+≡-≤ˢ : ∀ {x y z} → x ≡ y → y ≤ˢ z → x ≤ˢ z
+≡-≤ˢ refl leq = leq
+
+≤ˢ-≡ : ∀ {x y z} → x ≤ˢ y → y ≡ z → x ≤ˢ z
+≤ˢ-≡ leq refl = leq
+
+tran-≤ˢ : ∀ {a b c} → a ≤ˢ b → b ≤ˢ c → a ≤ˢ c
+tran-≤ˢ s≤s b≤c = b≤c
+tran-≤ˢ e≤l s≤s = e≤l
+
+refl-≤ˢ : ∀ {a b} → a ≡ b → a ≤ˢ b
+refl-≤ˢ refl = s≤s
+
+≤ˢ-max : ∀ {a} → a ≤ˢ live
+≤ˢ-max {live} = s≤s
+≤ˢ-max {erased} = e≤l
+
+≤ˢ-min : ∀ {a} → erased ≤ˢ a
+≤ˢ-min {live} = e≤l
+≤ˢ-min {erased} = s≤s
+
+≤ˢ-min-eq : ∀ {a} → a ≤ˢ erased → a ≡ erased
+≤ˢ-min-eq s≤s = refl
+
+↓-erased : ∀ {f} → ↓ f → f erased ≡ erased
+↓-erased {f} ↓f = ≤ˢ-min-eq ↓f
+
+-- convert from `monotone` that's easy to prove
+-- to `monotone` that's more useful
+-- this step relies on the fact that we can
+-- enumerate `Status`
+↓-↡ : ∀ {f} → ↓ f → ↡ f
+↓-↡ {f} ↓f = ↡f 
+    where 
+        ↡f : ∀ {a b} → a ≤ˢ b → f a ≤ˢ f b
+        ↡f {live} {live} a≤b = s≤s
+        ↡f {erased} {live} a≤b = tran-≤ˢ ↓f ≤ˢ-min
+        ↡f {erased} {erased} a≤b = s≤s
+```
+
+Mappings on `Status`
+
+Convention on naming:
+- `x, y, z` are for treeshapes
+- `tx, ty, tz` correspond to `Tree x, Tree y, Tree z`
+- `xs, ...` are for treeshape lists
+- `txs, ...` are `TreeList xs, ...` respectively.
+
+```agda
+map : ∀ {x} → (Status → Status) → Tree x → Tree x
+map-list : ∀ {xs} → (Status → Status) → TreeList xs → TreeList xs
+
+map f (leaf s) = leaf (f s)
+map f (node s l) = node (f s) (map-list f l)
+map-list f [] = []
+map-list f (tx ∷ txs) = map f tx ∷ map-list f txs
 ```
 
 Our path is independent from the content of the tree.
 
 ```agda
 data _∈_ : TreeShape → List TreeShape → Set where
-    here    : ∀ {x : TreeShape} {xs : List TreeShape} → x ∈ (x ∷ xs)
-    there   : ∀ {x y : TreeShape} {xs : List TreeShape} 
-            → x ∈ xs → x ∈ (y ∷ xs)
+    here    : ∀ {x} {xs} → x ∈ (x ∷ xs)
+    there   : ∀ {x y xs} → x ∈ xs → x ∈ (y ∷ xs)
 
+-- this is necessary to expose the lower sturcture (for the termination checker)
 data _∈ᶜ_ : TreeShape → TreeShape → Set where
-    child   : ∀ {t : TreeShape} {ts : List TreeShape} 
-            → (t ∈ ts) → t ∈ᶜ (node ts) 
+    child : ∀ {t ts} → (t ∈ ts) → t ∈ᶜ (node ts) 
 
 data _⇒_ : TreeShape → TreeShape → Set where
-    self    : ∀ {t : TreeShape} → t ⇒ t
-    tran    : ∀ {y x z : TreeShape} → y ∈ᶜ x → y ⇒ z → x ⇒ z
+    self : ∀ {t} → t ⇒ t
+    tran : ∀ {y x z} → y ∈ᶜ x → y ⇒ z → x ⇒ z
+
+-- A basic property for _⇒_
+_+ᵖ_ : ∀ {x y z} → x ⇒ y → y ⇒ z → x ⇒ z
+self +ᵖ y⇒z = y⇒z
+tran a∈xs a⇒y +ᵖ y⇒z = tran a∈xs (a⇒y +ᵖ y⇒z)
 ```
 
 A tree is valid when all the children of an erased node is erased.
 
 ```agda
-data Not-in : ∀ {x : TreeShape} → Tree x → Set where
+-- Not really necessary
+data Not-in : ∀ {x} → Tree x → Set where
     leaf : Not-in (leaf erased)
-    node : ∀ {xs : List TreeShape} {txs : TreeList xs} → Not-in (node erased txs)
+    node : ∀ {xs} {txs : TreeList xs} → Not-in (node erased txs)
+
+data ○ : TreeShape → Set where
+    node : ∀ {xs} → ○ (node xs)
 
 data Is-node : TreeShape → Set where
-    node : ∀ {xs : List TreeShape} → Is-node (node xs)
+    node : ∀ {xs} → Is-node (node xs)
 
-data Is-in : ∀ {x : TreeShape} → Tree x → Set where
-    leaf : Is-in (leaf live)
-    node : ∀ {xs : List TreeShape} {txs : TreeList xs} → Is-in (node live txs)
-
-data All : ∀ {xs : List TreeShape} → (∀ {x : TreeShape} → Tree x → Set) → TreeList xs → Set where
-    [] : ∀ {P : ∀ {x : TreeShape} → Tree x → Set} → All P []
-    _∷_ : ∀ {x : TreeShape} {tx : Tree x} {xs : List TreeShape} {txs : TreeList xs} 
-            {P : ∀ {x : TreeShape} → Tree x → Set} → P tx → All P txs → All P (tx ∷ txs)
+data All (P : ∀ {x} → Tree x → Set) : ∀ {xs} → TreeList xs → Set where
+    []  : All P []
+    _∷_ : ∀ {x} {tx : Tree x} {xs} {txs : TreeList xs} → P tx → All P txs 
+        → All P (tx ∷ txs)
 
 -- cannot use `All Valid xs` because of termination checking
-data All-valid : ∀ {xs : List TreeShape} → TreeList xs → Set 
-data Valid : ∀ {x : TreeShape} → Tree x → Set
+data All-valid : ∀ {xs} → TreeList xs → Set 
+data Valid : ∀ {x} → Tree x → Set
 
 data Valid where
-    leaf        : ∀ {s : Status} → Valid (leaf s)
-    node-live   : ∀ {xs : List TreeShape} {txs : TreeList xs} → 
-                All-valid txs → Valid (node live txs)
-    node-erased : ∀ {xs : List TreeShape} {txs : TreeList xs} →
-                All-valid txs → All Not-in txs → Valid (node erased txs)
+    leaf        : ∀ {s} → Valid (leaf s)
+    node-live   : ∀ {xs} {txs : TreeList xs} → All-valid txs → Valid (node live txs)
+    node-erased : ∀ {xs} {txs : TreeList xs} → All-valid txs → All Not-in txs 
+                → Valid (node erased txs)
 
 data All-valid where
     []  : All-valid []
-    _∷_ : ∀ {x : TreeShape} {tx : Tree x} {xs : List TreeShape} {txs : TreeList xs}
-            → Valid tx → All-valid txs → All-valid (tx ∷ txs)
+    _∷_ : ∀ {x} {tx : Tree x} {xs} {txs : TreeList xs} → Valid tx → All-valid txs
+        → All-valid (tx ∷ txs)
 ```
 
-Basic functions to traverse and the content of the tree.
+Basic functions to traverse the content of the tree.
 
 ```agda
-get-list    : ∀ {x : TreeShape} {xs : List TreeShape} 
-            → x ∈ xs → TreeList xs → Tree x 
-get-list here (x ∷ _)              = x
-get-list (there x∈xs) (_ ∷ xs)     = get-list x∈xs xs 
+get-list : ∀ {x xs} → x ∈ xs → TreeList xs → Tree x 
+get-list here (x ∷ _) = x
+get-list (there x∈xs) (_ ∷ xs) = get-list x∈xs xs 
 
-get : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree y 
-get self tx                             = tx
+get : ∀ {x y} → x ⇒ y → Tree x → Tree y 
+get self tx = tx
 get (tran (child y∈xs) y⇒z) (node _ tx) = get y⇒z (get-list y∈xs tx)
 
-status : ∀ {x : TreeShape} → Tree x → Status
-status (leaf b)     = b
-status (node b _)   = b
+status : ∀ {x} → Tree x → Status
+status (leaf s) = s
+status (node s _) = s
 
-get-status : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Status 
+get-status : ∀ {x y} → x ⇒ y → Tree x → Status 
 get-status x⇒y tx = status (get x⇒y tx)
+
+-- is-erased
+⊗ : ∀ {x} → Tree x → Set
+⊗ tx = status tx ≡ erased
+
+-- is-live
+⊙ : ∀ {x} → Tree x → Set
+⊙ tx = status tx ≡ live
+
+get-all : ∀ {x xs} {P : ∀ {z} → Tree z → Set} {txs : TreeList xs}
+    → (x∈xs : x ∈ xs) → All P txs → P (get-list x∈xs txs)
+get-all here (atx ∷ _) = atx
+get-all (there x∈xs) (_ ∷ atxs) = get-all x∈xs atxs
+
+get-map-list : ∀ {x xs} (f : Status → Status) → (x∈xs : x ∈ xs)
+    → (txs : TreeList xs)
+    → get-list x∈xs (map-list f txs) ≡ map f (get-list x∈xs txs)
+get-map-list f here (tx ∷ txs) = refl
+get-map-list f (there x∈xs) (tx ∷ txs) = get-map-list f x∈xs txs
+
+map-status : ∀ {x} → (f : Status → Status) → (tx : Tree x)
+    → status (map f tx) ≡ f (status tx)
+map-status f (leaf s) = refl
+map-status f (node s _) = refl
+
+get-map : ∀ {x y} → (tx : Tree x) → (x⇒y : x ⇒ y) → (f : Status → Status)
+    → get-status x⇒y (map f tx) ≡ f (get-status x⇒y tx)
+get-map tx self f = map-status f tx
+get-map (node s (tx ∷ txs)) (tran (child here) y⇒z) f = get-map tx y⇒z f
+get-map (node s (tx ∷ txs)) (tran (child (there y∈xs)) y⇒z) f = begin 
+    get-status y⇒z (get-list y∈xs (map-list f txs))
+    ≡⟨ cong (λ z → get-status y⇒z z) (get-map-list f y∈xs txs) ⟩ 
+    get-status y⇒z (map f (get-list y∈xs txs)) 
+    ≡⟨ get-map (get-list y∈xs txs) y⇒z f ⟩
+    f (get-status y⇒z (get-list y∈xs txs))
+    ∎
+
+get-+ᵖ : ∀ {x y z} (x⇒y : x ⇒ y) (y⇒z : y ⇒ z) (tx : Tree x) 
+    → get (x⇒y +ᵖ y⇒z) tx ≡ get y⇒z (get x⇒y tx)
+get-+ᵖ self y⇒z tx = refl
+get-+ᵖ (tran (child y∈xs) y⇒z) z⇒a (node s txs) = get-+ᵖ y⇒z z⇒a (get-list y∈xs txs)
+
+-- replace an element in the list
+set-list : ∀ {x xs} → (x∈xs : x ∈ xs) → Tree x → TreeList xs → TreeList xs
+set-list here tx (_ ∷ txs) = tx ∷ txs
+set-list (there x∈xs) tx (ty ∷ txs) = ty ∷ set-list x∈xs tx txs
+
+-- if the replaced element has the same property, then the `All` property is preserved
+All-set : ∀ {x xs} {P : ∀ {z} → Tree z → Set} {tx : Tree x} {txs : TreeList xs}
+    → (x∈xs : x ∈ xs) → P tx → All P txs → All P (set-list x∈xs tx txs)
+All-set here Px (_ ∷ axs) = Px ∷ axs
+All-set (there x∈xs) Px (az ∷ axs) = az ∷ All-set x∈xs Px axs
 
 Is-live : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Set
 Is-live x⇒y tx = get-status x⇒y tx ≡ live
 
 -- convert not-in to erased
--- (one would expect this to be trivial, but it turned out not to be the case)
 notin-to-erased : ∀ {x y : TreeShape} → (tx : Tree x) → (x⇒y : x ⇒ y)
                     → Not-in (get x⇒y tx) → get-status x⇒y tx ≡ erased
 notin-to-erased-help : ∀ {y z : TreeShape} {xs : List TreeShape} → (y⇒z : y ⇒ z)
@@ -212,10 +336,75 @@ notin-to-erased-help y⇒z here (tx ∷ txs) n = notin-to-erased tx y⇒z n
 notin-to-erased-help y⇒z (there y∈xs) (tx ∷ txs) n =  notin-to-erased-help y⇒z y∈xs txs n
 ```
 
+```agda
+-- definition of validity
+V : ∀ {x} → Tree x → Set
+V {x} tx = ∀ {y z} → (x⇒y : x ⇒ y) → (y⇒z : y ⇒ z) 
+            → get-status (x⇒y +ᵖ y⇒z) tx ≤ˢ get-status x⇒y tx
+
+-- validity is preserved under monotone mappings
+V-map : ∀ {f x} {tx : Tree x} → ↡ f → V tx → V (map f tx)
+V-map {f} {_} {tx} ↡f Vx x⇒y y⇒z = ≤ˢ-≡ 
+    (≡-≤ˢ (get-map tx (x⇒y +ᵖ y⇒z) f) (↡f (Vx x⇒y y⇒z))) 
+    (sym (get-map tx x⇒y f))
+
+-- construct validity from `All` properties
+All-V : ∀ {s xs} {txs : TreeList xs} → All (λ tx → status tx ≤ˢ s) txs → All V txs → V (node s txs)
+All-V as bs self self = s≤s
+All-V {_} {_} {txs} as bs self (tran (child y∈xs) y⇒z) = tran-≤ˢ (get-all y∈xs bs self y⇒z) (get-all y∈xs as)
+All-V {_} {_} {txs} as bs (tran (child y∈xs) y⇒z) z⇒a = get-all y∈xs bs y⇒z z⇒a
+
+-- construct `All` from arbitrary qualifiers
+∀-All : ∀ {xs} {txs : TreeList xs} {P : ∀ {y} → Tree y → Set} 
+    → (∀ {x} → (x∈xs : x ∈ xs) → P (get-list x∈xs txs)) → All P txs
+∀-All {[]} {[]} {P} prop = []
+∀-All {x ∷ xs} {tx ∷ txs} {P} prop = prop here ∷ ∀-All prop′
+    where
+        prop′ : ∀ {y} → (y∈xs : y ∈ xs) → P (get-list y∈xs txs)
+        prop′ y∈xs =  prop (there y∈xs)
+
+-- `project` validity to the first `All` property
+V-All₁ : ∀ {s xs} {txs : TreeList xs} → V (node s txs) → All (λ tx → status tx ≤ˢ s) txs
+V-All₁ Vx = ∀-All λ x∈xs → Vx self (tran (child x∈xs) self) 
+
+-- `project` validity to the second `All` property
+V-All₂ : ∀ {s xs} {txs : TreeList xs} → V (node s txs) → All V txs
+V-All₂ Vx = ∀-All λ x∈xs → λ x⇒y → λ y⇒z → Vx (tran (child x∈xs) x⇒y) y⇒z  
+
+h : Status → Status
+h _ = erased
+
+↓h : ↓ h
+↓h {live} = e≤l
+↓h {erased} = s≤s
+
+erase : ∀ {x y : TreeShape} → x ⇒ y → Tree x → Tree x
+erase self tx = map h tx
+erase (tran (child y∈xs) y⇒z) (node s txs) = node s (set-list y∈xs (erase y⇒z (get-list y∈xs txs)) txs)
+
+erase-↓ : ∀ {x y : TreeShape} → (x⇒y : x ⇒ y) → (tx : Tree x) → status (erase x⇒y tx) ≤ˢ status tx
+erase-↓ self (leaf _) = ≤ˢ-min
+erase-↓ self (node _ _) = ≤ˢ-min
+erase-↓ (tran (child _) _) (node _ _) = s≤s 
+
+erase-V : ∀ {x y : TreeShape} → (x⇒y : x ⇒ y) → (tx : Tree x) → V tx → V (erase x⇒y tx)
+erase-V self tx Vx = V-map (↓-↡ ↓h) Vx
+erase-V (tran (child y∈xs) y⇒z) (node s txs) Vx = All-V 
+    (All-set y∈xs ≤y′ ≤xs) (All-set y∈xs (Vy′ Vy) Vxs)
+    where
+        ty = get-list y∈xs txs
+        ty′ = erase y⇒z ty
+        Vy′ = erase-V y⇒z ty
+        Vxs = V-All₂ Vx
+        ≤xs = V-All₁ Vx
+        Vy = get-all y∈xs Vxs
+        ≤y′ = tran-≤ˢ (erase-↓ y⇒z ty) (get-all y∈xs ≤xs) 
+```
+
 The erase function change the status of the node and all of its children
 to `erased`.
 
-```agda
+```plaintext
 -- `erase-all` erases the entire tree
 erase-all : ∀ {x : TreeShape} → Tree x → Tree x
 erase-all-help : ∀ {xs : List TreeShape} → TreeList xs → TreeList xs
@@ -314,7 +503,7 @@ erased-prop-help y⇒z (there y∈xs) (tx ∷ txs) (vtx ∷ vtxs) (ntx ∷ ntxs)
 To state the property of the add operation, we need to
 compare paths and memberships.
 
-```agda
+```plaintext
 data _≡ᵐ_ : ∀ {x y : TreeShape} {xs : List TreeShape} → x ∈ xs → y ∈ xs → Set where
     refl : ∀ {x : TreeShape} {xs : List TreeShape} {x∈xs : x ∈ xs} → x∈xs ≡ᵐ x∈xs
 
@@ -337,7 +526,7 @@ there x∈xs ≡ᵐ? there y∈xs with x∈xs ≡ᵐ? y∈xs
 
 Some operation on lists, and related properties
 
-```agda
+```plaintext
 list-set : ∀ {x : TreeShape} {xs : List TreeShape} → x ∈ xs → TreeShape → List TreeShape
 list-set {_} {_ ∷ xs} here y = y ∷ xs
 list-set {_} {a ∷ xs} (there x∈xs) y = a ∷ list-set x∈xs y
@@ -384,7 +573,7 @@ We need to state the lift property for `add-shape`.
 Since add-shape modifies objects along the path,
 we need a relation `(a → b) ≤ᵖ (a → b → c → ...)`
 
-```agda
+```plaintext
 data _≤ᵖ_ : ∀ {x y z : TreeShape} → x ⇒ y → x ⇒ z → Set where
     zero : ∀ {x y : TreeShape} {x⇒x : x ⇒ x} {x⇒y : x ⇒ y} → x⇒x ≤ᵖ x⇒y
     succ : ∀ {x y z a : TreeShape} {y⇒a : y ⇒ a} {y⇒z : y ⇒ z} {y∈x : y ∈ᶜ x} → 
@@ -396,7 +585,7 @@ x⇒y ≰ᵖ x⇒z = ¬ (x⇒y ≤ᵖ x⇒z)
 
 Back on the `lift` and `new` properties for `add-shape`
 
-```agda
+```plaintext
 add-shape-lift : ∀ {x y a : TreeShape} → (ix : Is-node x) → (iy : Is-node y) →
                  (x⇒y : x ⇒ y) → (x⇒a : x ⇒ a) → x⇒a ≰ᵖ x⇒y → (z : TreeShape) → (add-shape ix iy x⇒y z) ⇒ a
 add-shape-lift node node self self nleq z = ⊥-elim (nleq zero)
@@ -422,7 +611,7 @@ add-shape-new node node (tran {node ys} (child y∈xs) y⇒a) z =
 
 With things settled on `TreeShape`, we proceed to `Tree`
 
-```agda
+```plaintext
 tree-list-set : ∀ {x y : TreeShape} {xs : List TreeShape} → (x∈xs : x ∈ xs) 
                 → Tree y → TreeList xs → TreeList (list-set x∈xs y)
 tree-list-set here ty (_ ∷ txs) = ty ∷ txs
@@ -469,7 +658,7 @@ add-erased-help (tx ∷ txs) b⇒z (there b∈xs) (vtx ∷ vtxs) (ntx ∷ ntxs) 
 
 To prove the final property `add-other`, we need two helper functions.
 
-```agda
+```plaintext
 -- `list-set-new` gives a path to the freshly modified object
 -- `list-set-new-prop` states that this path points to the freshly modified object
 list-set-new-prop : ∀ {b} {xs} {c}
@@ -1039,3 +1228,4 @@ rem-sameᵗ (child (inᶜ p)) (trans x∈a a≺y) p≠q =
 rem-sameᵗ (trans (inᶜ x∈y) p) (child (inᶜ x∈y')) p≠q = child {!   !}
 rem-sameᵗ (trans x p) (trans x₁ q) p≠q = {!   !}
 ``` 
+ 
