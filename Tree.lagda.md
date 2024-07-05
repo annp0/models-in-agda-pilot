@@ -7,6 +7,7 @@ open import Relation.Nullary using (¬_)
 open import Data.Empty using (⊥; ⊥-elim)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.Maybe using (Maybe; just; nothing)
+open import Data.Product using (Σ; Σ-syntax; _,_; proj₁; proj₂)
 ```
 
 ## Specifications
@@ -290,8 +291,8 @@ get-status : ∀ {x y} → x ⇒ y → Tree x → Status
 get-status x⇒y tx = status (get x⇒y tx)
 
 -- is-live
-⊙ : ∀ {x y} → (x⇒y : x ⇒ y) → Tree x → Set
-⊙ x⇒y tx = get-status x⇒y tx ≡ live
+L : ∀ {x y} → (x⇒y : x ⇒ y) → Tree x → Set
+L x⇒y tx = get-status x⇒y tx ≡ live
 
 get-all : ∀ {x xs} {P : ∀ {z} → Tree z → Set} {txs : TreeList xs}
     → (x∈xs : x ∈ xs) → All P txs → P (get-list x∈xs txs)
@@ -571,7 +572,7 @@ add-≡ node node (node x _) ta (tran {leaf} (child y∈xs) (tran () _))
 add-≡ node node (node x _) ta (tran {node _} (child y∈xs) y⇒z) = refl
 
 add-V : ∀ {x y Nx Ny z} {tx : Tree x} {tz : Tree z} → (x⇒y : x ⇒ y) 
-    → (Vx : V tx) → (Vz : V tz) → ⊙ x⇒y tx
+    → (Vx : V tx) → (Vz : V tz) → L x⇒y tx
     → V (add {_} {_} {Nx} {Ny} x⇒y tx tz)
 add-V {_} {_} {node} {node} {_} {node s txs} self Vx Vz refl 
     = All-V (≤ˢ-max ∷ V-All₁ Vx) (Vz ∷ V-All₂ Vx)
@@ -613,7 +614,7 @@ ls-↑-prop (there b∈xs) (there c∈xs) neq tz (tx ∷ txs) =
 -- the `add` operation won't change the content of other files in the system
 add-other : ∀ {x y} {Nx : N x} {Ny : N y} {z a} → (x⇒y : x ⇒ y) 
     → (x⇒a : x ⇒ a) → (n : x⇒a ≰ᵖ x⇒y) → (tx : Tree x) → (tz : Tree z) 
-    → ⊙ x⇒y tx → get-status x⇒a tx ≡ 
+    → L x⇒y tx → get-status x⇒a tx ≡ 
     get-status (as-↑ {_} {_} {Nx} {Ny} x⇒y x⇒a n z) (add x⇒y tx tz)
 add-other {_} {_} {node} {node} self self n tx tz ⊙x = ⊥-elim (n zero)
 add-other {_} {_} {node} {node} self (tran (child _) x⇒a) _ (node _ _) tz ⊙x = refl
@@ -636,7 +637,6 @@ add-other {_} {_} {node} {node} {z} (tran {node bs} (child b∈xs) b⇒y)
             get-status (as-↑ {_} {_} {node} {node} 
                 b⇒y c⇒a (λ ≤ → n (succ ≤)) z) x)
         tb′ = (add b⇒y (get-list b∈xs txs) tz)
-
 ... | no neq = begin
         get-status c⇒a (get-list c∈xs txs)
         ≡⟨ cong (λ x → get-status c⇒a x) 
@@ -646,12 +646,10 @@ add-other {_} {_} {node} {node} {z} (tran {node bs} (child b∈xs) b⇒y)
         refl 
 ```
 
-## Garbage-collect
+## Garbage collection 
 
 ```agda
--- We need dependent pairs
-open import Data.Product
-
+-- filter out the erased trees
 filter : ∀ {xs} → TreeList xs → Σ[ xs′ ∈ List TreeShape ] TreeList xs′
 filter [] = [] , []
 filter {x ∷ _} (tx ∷ txs) with status tx
@@ -675,11 +673,13 @@ data All-help : ∀ {xs} → TreeList xs → Set
 
 data All-live where
     leaf : All-live (leaf live)
-    node : ∀ {xs} {txs : TreeList xs} → All-help txs → All-live (node live txs) 
+    node : ∀ {xs} {txs : TreeList xs} 
+        → All-help txs → All-live (node live txs) 
 
 data All-help where
     [] : All-help []
-    _∷_ : ∀ {x} {xs} {tx : Tree x} {txs : TreeList xs} → All-live tx → All-help txs → All-help (tx ∷ txs)
+    _∷_ : ∀ {x} {xs} {tx : Tree x} {txs : TreeList xs} 
+        → All-live tx → All-help txs → All-help (tx ∷ txs)
 
 -- all the children of a tree are live after garbage-collect
 gc-live : ∀ {x} → (tx : Tree x) → status tx ≡ live → All-live (proj₂ (gc tx))
@@ -691,4 +691,21 @@ gcl-help [] = []
 gcl-help (tx ∷ txs) with status tx in eq
 ... | live = gc-live tx eq ∷ gcl-help txs
 ... | erased = gcl-help txs
+
+-- get All-live from All-list
+Al-get : ∀ {x xs} {txs : TreeList xs} → All-help txs → (x∈xs : x ∈ xs) 
+    → All-live (get-list x∈xs txs)
+Al-get (altx ∷ altxs) here = altx
+Al-get (altx ∷ altxs) (there x∈xs) = Al-get altxs x∈xs
+
+-- convert All-live to universal quantifiers
+Al-∀ : ∀ {x y} {tx : Tree x} → All-live tx → (x⇒y : x ⇒ y) → L x⇒y tx
+Al-∀ leaf self = refl
+Al-∀ (node _) self = refl
+Al-∀ (node altxs) (tran (child y∈xs) y⇒z) = Al-∀ (Al-get altxs y∈xs) y⇒z
+
+-- an all-live tree is valid (now obvious based on previous lemmas)
+Al-V : ∀ {x} {tx : Tree x} → All-live tx → V tx
+Al-V altx x⇒y y⇒z = ≡-≤ˢ (Al-∀ altx (x⇒y +ᵖ y⇒z)) 
+    (≤ˢ-≡ s≤s (sym (Al-∀ altx x⇒y)))
 ``` 
