@@ -254,9 +254,9 @@ record FSAPI (A : Set) : Set₁ where
         val : A → Set
         -- a notion of path is required
         path : Set
-        -- a path is valid if it points to a node
+        -- a path is valid if it points to something 
         path-val : A → path → Set
-        -- if a path is valid then for sure we can get a node
+        -- if a path is valid then for sure we can get something
         get-sure : (x : A) → (p : path) → path-val x p → A
         -- a predicate to indicate whether
         -- a path is live (path-live)
@@ -273,7 +273,7 @@ record FSAPI (A : Set) : Set₁ where
             → nod (get-sure x p pv)
         -- the new fs to be added    
             → (a : A) → A
-        -- to remove a node
+        -- to remove a node, same story as erase
         remⁱ : (x : A) → (p : path) → path-val x p → A
 
 get-unsure : Σ[ x ∈ TreeShape ] Tree x → Path 
