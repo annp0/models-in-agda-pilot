@@ -7,15 +7,6 @@ open import Data.Sum using (_⊎_; inj₁; inj₂)
 open import Data.List using (List; []; _∷_)
 ```
 
-# Interface
-
-Experiments with interfaces
-
-# Todo 
-
-- Read on algebras and coalgebras
-- Model binary trees with interfaces
-
 # Interfaces
 
 An interface defines the range of questions you can ask and 
