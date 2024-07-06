@@ -244,3 +244,85 @@ test′ : Answers _ _
 test′ = observe ((adq [] ed-V) ∷ (adq [] sf-V) ∷ (adq (1 ∷ []) sf-V) ∷ 
     (req (1 ∷ [])) ∷ gcq ∷ print ∷ []) (FS ed-V)
 ```
+
+## Interface (as a record)
+
+```agda
+record FSAPI (A : Set) : Set₁ where
+    field
+        -- the notion of validity
+        val : A → Set
+        -- a notion of path is required
+        path : Set
+        -- a path is valid if it points to a node
+        path-val : A → path → Set
+        -- if a path is valid then for sure we can get a node
+        get-sure : (x : A) → (p : path) → path-val x p → A
+        -- a predicate to indicate whether
+        -- a path is live (path-live)
+        liv : A → Set
+        -- a predicate to indicate whether the object
+        -- is a node
+        nod : A → Set
+        -- to add a node
+        --   original fs  x itself must be a node 
+        addⁱ : (x : A) → nod x
+        --  a path      p points to something
+            → (p : path) → (pv : path-val x p) 
+        -- p points to a node
+            → nod (get-sure x p pv)
+        -- the new fs to be added    
+            → (a : A) → A
+        -- to remove a node
+        remⁱ : (x : A) → (p : path) → path-val x p → A
+
+get-unsure : Σ[ x ∈ TreeShape ] Tree x → Path 
+    → Maybe (Σ[ y ∈ TreeShape ] Tree y)
+get-unsure (x , tx) p = mapᵐ (λ (y , x⇒y) → y , get x⇒y tx) (Path-⇒ p tx)
+
+path-val : Σ[ x ∈ TreeShape ] Tree x → Path → Set
+path-val (x , tx) p = 
+    Σ[ y ∈ TreeShape ] 
+        (Σ[ x⇒y ∈ (x ⇒ y) ] Path-⇒ p tx ≡ just (y , x⇒y))  
+
+get-sure : (fx : Σ[ x ∈ TreeShape ] Tree x) → (p : Path) 
+    → path-val fx p → Σ[ y ∈ TreeShape ] Tree y 
+get-sure (x , tx) p (y , (x⇒y , eq)) = y , get x⇒y tx
+
+-- I really ran out of names...
+FST : Set
+FST = Σ[ x ∈ TreeShape ] Tree x
+
+-- is-node, on FST level
+NOD : FST → Set
+NOD = λ (x , tx) → N x
+
+-- erasing something, on FST level
+remfs : (fx : FST) → (p : Path) → path-val fx p → FST
+remfs (x , tx) p (y , (x⇒y , eq)) = x , erase x⇒y tx
+
+-- adding something, on FST level
+addfs : (fx : FST) → NOD fx  
+        --  a path      p points to something
+        → (p : Path) → (pv : path-val fx p) 
+        -- p points to a node
+        → NOD (get-sure fx p pv)
+        -- the new fs to be added    
+        → (fa : FST) → FST
+addfs (x , tx) nx p (y , (x⇒y , eq)) ny (a , ta)
+    = add-shape nx ny x⇒y a , add x⇒y tx ta
+
+-- our model indeed implements the interface
+_ : FSAPI FST
+_ = record{ 
+        val = λ (x , tx) → V tx
+    ;   path = Path
+    ;   get-sure = get-sure
+    ;   path-val = path-val
+    ;   liv = λ (x , tx) → L′ tx
+    ;   nod = NOD
+    ;   addⁱ = addfs
+    ;   remⁱ = remfs
+    }
+
+```
