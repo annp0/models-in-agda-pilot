@@ -165,7 +165,7 @@ FS {x} {tx} Vtx .call (req p) with Path-⇒ p tx
 ... | just (y , x⇒y) = success , FS (erase-V x⇒y tx Vtx)
 ... | nothing = failure "Invalid path provided" , FS Vtx
 FS {x} {tx} Vtx .call gcq with status tx in eq
-... | live = success , FS (Al-V (gc-live tx eq))
+... | live = success , FS (All-L′-V (gc-live tx eq))
 ... | erased = failure "cannot garbage collect erased root" , FS Vtx
 FS {x} {tx} Vtx .call (adq {a} {ta} p Vta) with x in eq₁
 -- decision branch 0: is the whole fs just a single leaf?

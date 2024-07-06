@@ -270,6 +270,11 @@ data All (P : ∀ {x} → Tree x → Set) : ∀ {xs} → TreeList xs → Set whe
     []  : All P []
     _∷_ : ∀ {x} {tx : Tree x} {xs} {txs : TreeList xs} → P tx → All P txs 
         → All P (tx ∷ txs)
+
+data Allᵗ (P : ∀ {x} → Tree x → Set) : ∀ {x} → Tree x → Set where
+    leaf : ∀ {s} → P (leaf s) → Allᵗ P (leaf s)
+    node : ∀ {s xs} {txs : TreeList xs} → All (λ x → Allᵗ P x) txs
+        → P (node s txs) → Allᵗ P (node s txs)
 ```
 
 Functions to traverse the tree.
@@ -298,6 +303,14 @@ get-all : ∀ {x xs} {P : ∀ {z} → Tree z → Set} {txs : TreeList xs}
     → (x∈xs : x ∈ xs) → All P txs → P (get-list x∈xs txs)
 get-all here (atx ∷ _) = atx
 get-all (there x∈xs) (_ ∷ atxs) = get-all x∈xs atxs
+
+-- convert Allᵗ to arbitrary quantifiers
+Allᵗ-∀ : ∀ {x y} {tx : Tree x} {P : ∀ {z} → Tree z → Set} 
+    → Allᵗ P tx → (x⇒y : x ⇒ y) → P (get x⇒y tx)
+Allᵗ-∀ (leaf atx) self = atx
+Allᵗ-∀ (node atxs atx) self = atx
+Allᵗ-∀ (node atxs atx) (tran (child y∈xs) y⇒z) = 
+    Allᵗ-∀ (get-all y∈xs atxs) y⇒z
 
 get-map-list : ∀ {x xs} (f : Status → Status) → (x∈xs : x ∈ xs)
     → (txs : TreeList xs)
@@ -666,46 +679,25 @@ gc-help {x ∷ _} (tx ∷ txs) with status tx
 ... | live = proj₁ (gc tx) ∷ proj₁ (gc-help txs) , proj₂ (gc tx) ∷ proj₂ (gc-help txs)
 ... | erased = gc-help txs
 
--- A quick definition for an all-live tree
--- Could be more general
-data All-live : ∀ {x} → Tree x → Set
-data All-help : ∀ {xs} → TreeList xs → Set
-
-data All-live where
-    leaf : All-live (leaf live)
-    node : ∀ {xs} {txs : TreeList xs} 
-        → All-help txs → All-live (node live txs) 
-
-data All-help where
-    [] : All-help []
-    _∷_ : ∀ {x} {xs} {tx : Tree x} {txs : TreeList xs} 
-        → All-live tx → All-help txs → All-help (tx ∷ txs)
+-- shallow is-live
+L′ : ∀ {x} → Tree x → Set
+L′ tx = status tx ≡ live
 
 -- all the children of a tree are live after garbage-collect
-gc-live : ∀ {x} → (tx : Tree x) → status tx ≡ live → All-live (proj₂ (gc tx))
-gcl-help : ∀ {xs} → (txs : TreeList xs) → All-help (proj₂ (gc-help txs))
-gc-live (leaf _) refl = leaf
-gc-live (node _ txs) refl = node (gcl-help txs)
+gc-live : ∀ {x} → (tx : Tree x) → L′ tx → Allᵗ L′ (proj₂ (gc tx))
+gcl-help : ∀ {xs} → (txs : TreeList xs) → All (λ x → Allᵗ L′ x) (proj₂ (gc-help txs))
+gc-live (leaf _) refl = leaf refl
+gc-live (node _ txs) refl = node (gcl-help txs) refl
 gcl-help [] = []
 -- after v2.6.3 we have `with ... in ...` now (otherwise I'll be stuck here)
 gcl-help (tx ∷ txs) with status tx in eq
 ... | live = gc-live tx eq ∷ gcl-help txs
 ... | erased = gcl-help txs
 
--- get All-live from All-list
-Al-get : ∀ {x xs} {txs : TreeList xs} → All-help txs → (x∈xs : x ∈ xs) 
-    → All-live (get-list x∈xs txs)
-Al-get (altx ∷ altxs) here = altx
-Al-get (altx ∷ altxs) (there x∈xs) = Al-get altxs x∈xs
-
--- convert All-live to universal quantifiers
-Al-∀ : ∀ {x y} {tx : Tree x} → All-live tx → (x⇒y : x ⇒ y) → L x⇒y tx
-Al-∀ leaf self = refl
-Al-∀ (node _) self = refl
-Al-∀ (node altxs) (tran (child y∈xs) y⇒z) = Al-∀ (Al-get altxs y∈xs) y⇒z
-
 -- an all-live tree is valid (now obvious based on previous lemmas)
-Al-V : ∀ {x} {tx : Tree x} → All-live tx → V tx
-Al-V altx x⇒y y⇒z = ≡-≤ˢ (Al-∀ altx (x⇒y +ᵖ y⇒z)) 
-    (≤ˢ-≡ s≤s (sym (Al-∀ altx x⇒y)))
+-- useful in the interface to show a tree after garbage-collect is
+-- still valid
+All-L′-V : ∀ {x} {tx : Tree x} → Allᵗ L′ tx → V tx
+All-L′-V altx x⇒y y⇒z = ≡-≤ˢ (Allᵗ-∀ altx (x⇒y +ᵖ y⇒z)) 
+    (≤ˢ-≡ s≤s (sym (Allᵗ-∀ altx x⇒y)))
 ``` 
