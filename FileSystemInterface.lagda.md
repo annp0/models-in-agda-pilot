@@ -16,6 +16,12 @@ open Interface.Interface
 open Object
 ```
 
+```agda
+data Either (A : Set) (B : Set) : Set where
+    fst : A → Either A B
+    snd : B → Either A B
+```
+
 ## Interface for a file system
 
 To package APIs, we need to 'hide' the `erased` objects from the interface.
@@ -138,6 +144,8 @@ data FSQs : Set where
     req : Path → FSQs
     -- calling this function will evoke garbage collection
     gcq : FSQs
+    -- get an object by path
+    geq : Path → FSQs
     -- readout the current FS
     print : FSQs
 
@@ -147,6 +155,8 @@ FSI .Answer (adq _ _) = State
 FSI .Answer gcq = State
 FSI .Answer (req _) = State
 FSI .Answer print = Σ[ x ∈ TreeShape ] Tree x
+-- get might produce an object, or an error message
+FSI .Answer (geq _) = Either (Σ[ x ∈ TreeShape ] Tree x) State
 
 -- A file system is a valid tree, literally :)
 FS : ∀ {x} {tx : Tree x} → V tx → Object FSI
@@ -173,10 +183,16 @@ FS {x} {tx} Vtx .call (adq {a} {ta} p Vta) with x in eq₁
                         FS (add-V {node xs} {proj₁ (pl-⇒ p tx pl)} 
                         {node} {≡-N eq₂} 
                         (proj₂ (pl-⇒ p tx pl)) Vtx Vta (pl-L p tx pl))
-                ... | leaf = failure "Path is valid, but points to a node" , FS Vtx
+                ... | leaf = failure "Path is valid, but does not point to a directory" , FS Vtx
         ... | no _ = failure "Invalid path provided" , FS Vtx
 ... | leaf = failure "FS is a single file" , FS Vtx
 FS {x} {tx} Vtx .call print = (x , tx) , FS Vtx
+FS {x} {tx} Vtx .call (geq p) with pl? p tx
+... | yes pl = fst (proj₁ res , get (proj₂ res) tx) , FS Vtx
+        where
+            res : Σ[ y ∈ TreeShape ] x ⇒ y
+            res = pl-⇒ p tx pl
+... | no _ = snd (failure "Invalid path provided") , FS Vtx 
 ```
 
 ## Playground
@@ -222,3 +238,9 @@ success ∷
     ∷ []))))
 ```
 which is exactly what is expected.
+
+```agda
+test′ : Answers _ _
+test′ = observe ((adq [] ed-V) ∷ (adq [] sf-V) ∷ (adq (1 ∷ []) sf-V) ∷ 
+    (req (1 ∷ [])) ∷ gcq ∷ print ∷ []) (FS ed-V)
+```
