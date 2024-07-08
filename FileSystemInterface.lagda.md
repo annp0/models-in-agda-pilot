@@ -248,6 +248,81 @@ test′ = observe ((adq [] ed-V) ∷ (adq [] sf-V) ∷ (adq (1 ∷ []) sf-V) ∷
 ## Interface (as a record)
 
 ```agda
+record IsFS (A : Set) : Set₁ where
+    field
+        -- what is a FSObj?
+        FSObj : Set
+        -- what is a directory?
+        is-dir : FSObj → Set
+        -- what is a path?
+        path : Set
+        -- what is root?
+        root : A → FSObj
+        root-path : path
+        -- what is a valid path?
+        path-val : path → A → Set
+        path-get : (p : path) → (a : A)
+            → path-val p a → FSObj
+        -- get children
+        get-children : (x : FSObj) → is-dir x →  List FSObj
+        -- get the path to parent
+        get-parent : (p : path) → (a : A)
+            → path-val p a → p ≢ root-path → path
+        rm : (x : A) → (p : path) → path-val p x → A
+        ad : (x : A) → (p : path) → (pv : path-val p x) 
+            → is-dir (root x) → is-dir (path-get p x pv) 
+            → A → A
+        
+-- I really ran out of names...
+-- (FileSystemType)
+FST : Set
+FST = Σ[ x ∈ TreeShape ] Tree x
+
+path-val : Path → FST → Set
+path-val p (x , tx) = 
+    Σ[ y ∈ TreeShape ] 
+        (Σ[ x⇒y ∈ (x ⇒ y) ] Path-⇒ p tx ≡ just (y , x⇒y))  
+
+get-sure : (p : Path) → (fx : FST)
+    → path-val p fx → FST 
+get-sure p (x , tx) (y , (x⇒y , eq)) = y , get x⇒y tx
+
+is-dir : FST → Set
+is-dir = λ (x , tx) → N x
+
+tl-l : ∀ {xs} → TreeList xs → List FST
+tl-l [] = []
+tl-l {x ∷ _} (tx ∷ txs) = (x , tx) ∷ tl-l txs
+
+get-children : (fx : FST) → (is-dir fx) → List FST
+get-children (_ , node _ txs) node = tl-l txs
+
+get-parent : (p : Path) → (fx : FST) → path-val p fx 
+    → p ≢ [] → Path
+get-parent [] fx _ neq = ⊥-elim (neq refl)
+get-parent (n ∷ ns) fx _ neq = ns
+ 
+_ : IsFS FST
+_ = record { 
+        FSObj = FST
+    ;   is-dir = λ (x , tx) → N x
+    ;   path = List ℕ
+    ;   root = λ x → x 
+    ;   root-path = []
+    ;   path-val = path-val
+    ;   path-get = get-sure
+    ;   get-children = get-children 
+    ;   get-parent = get-parent
+    ;   rm = λ (x , tx) p (y , (x⇒y , eq)) → 
+            x , erase x⇒y tx
+    ;   ad = λ (x , tx) p (y , (x⇒y , eq)) nx ny (a , ta) → 
+            add-shape nx ny x⇒y a , add x⇒y tx ta
+    }
+
+```
+
+
+```plaintext
 record FSAPI (A : Set) : Set₁ where
     field
         -- the notion of validity
@@ -280,18 +355,9 @@ get-unsure : Σ[ x ∈ TreeShape ] Tree x → Path
     → Maybe (Σ[ y ∈ TreeShape ] Tree y)
 get-unsure (x , tx) p = mapᵐ (λ (y , x⇒y) → y , get x⇒y tx) (Path-⇒ p tx)
 
-path-val : Σ[ x ∈ TreeShape ] Tree x → Path → Set
-path-val (x , tx) p = 
-    Σ[ y ∈ TreeShape ] 
-        (Σ[ x⇒y ∈ (x ⇒ y) ] Path-⇒ p tx ≡ just (y , x⇒y))  
 
-get-sure : (fx : Σ[ x ∈ TreeShape ] Tree x) → (p : Path) 
-    → path-val fx p → Σ[ y ∈ TreeShape ] Tree y 
-get-sure (x , tx) p (y , (x⇒y , eq)) = y , get x⇒y tx
 
--- I really ran out of names...
-FST : Set
-FST = Σ[ x ∈ TreeShape ] Tree x
+
 
 -- is-node, on FST level
 NOD : FST → Set
@@ -324,5 +390,5 @@ _ = record{
     ;   addⁱ = addfs
     ;   remⁱ = remfs
     }
-
+   
 ```

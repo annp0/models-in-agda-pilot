@@ -50,7 +50,7 @@ _♭_ : Interface → Interface → Interface
 ⇒ is the morphism between interfaces.
 
 ```agda
-record _>_ (P Q : Interface) : Set where
+record _∘_ (P Q : Interface) : Set where
     field
         ask : P .Question → Q .Question
         answer : (p : P .Question) → Q .Answer (ask p) → P .Answer p
