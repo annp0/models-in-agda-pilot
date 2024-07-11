@@ -9,7 +9,9 @@ open import Data.Nat using (ℕ; zero; suc)
 open import Data.String using (String)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; _≢_; refl; trans; sym; cong)
+open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
 open import Data.Empty using (⊥; ⊥-elim)
+open import Relation.Nullary using (¬_)
 open import Tree
 open import Interface
 open Interface.Interface
@@ -20,6 +22,9 @@ open Object
 data Either (A : Set) (B : Set) : Set where
     fst : A → Either A B
     snd : B → Either A B
+
+case_of_ : ∀ {A B : Set} → A → (A → B) → B
+case x of f = f x
 ```
 
 ## Interface for a file system
@@ -39,6 +44,11 @@ Path = List ℕ
 mapᵐ : ∀ {A B : Set} → (A → B) → Maybe A → Maybe B 
 mapᵐ f (just x) = just (f x)
 mapᵐ f nothing = nothing
+
+-- this exists in Data.List but it is named 'map' and...
+mapˡ : ∀ {A B : Set} → (A → B) → List A → List B
+mapˡ f [] = []
+mapˡ f (x ∷ xs) = f x ∷ mapˡ f xs
 
 -- convert an integer into a membership relation
 -- this is to hide erased elements 
@@ -248,147 +258,166 @@ test′ = observe ((adq [] ed-V) ∷ (adq [] sf-V) ∷ (adq (1 ∷ []) sf-V) ∷
 ## Interface (as a record)
 
 ```agda
-record IsFS (A : Set) : Set₁ where
+record ISFS (A : Set) : Set₁ where
     field
         -- what is a FSObj?
-        FSObj : Set
+        FSOBJ : A → Set
         -- what is a directory?
-        is-dir : FSObj → Set
-        -- what is a path?
-        path : Set
+        ISDIR : (a : A) → FSOBJ a → Set
         -- what is root?
-        root : A → FSObj
-        root-path : path
-        -- what is a valid path?
-        path-val : path → A → Set
-        path-get : (p : path) → (a : A)
-            → path-val p a → FSObj
-        -- get children
-        get-children : (x : FSObj) → is-dir x →  List FSObj
-        -- get the path to parent
-        get-parent : (p : path) → (a : A)
-            → path-val p a → p ≢ root-path → path
-        rm : (x : A) → (p : path) → path-val p x → A
-        ad : (x : A) → (p : path) → (pv : path-val p x) 
-            → is-dir (root x) → is-dir (path-get p x pv) 
-            → A → A
+        ROOT : (a : A) → FSOBJ a
+        -- how do we establish equality between objects?
+        ISEQ : (a : A) → FSOBJ a → FSOBJ a → Set 
+        -- get children of a directory
+        GETC : (a : A) → (obj : FSOBJ a) → ISDIR a obj → List (FSOBJ a)
+        -- get the parent
+        GETP : (a : A) → (obj : FSOBJ a) → ¬ (ISEQ a obj (ROOT a)) → (FSOBJ a)
+        -- removing something
+        RM : (a : A) → (obj : FSOBJ a) → ¬ (ISEQ a obj (ROOT a)) → A
+        -- adding something
+        AD : (a : A) → (obj : FSOBJ a) → ISDIR a (ROOT a) → ISDIR a obj → A → A
         
 -- I really ran out of names...
--- (FileSystemType)
+-- FileSystemType
+-- A file system is a tree that's valid, and the root is live
 FST : Set
-FST = Σ[ x ∈ TreeShape ] Tree x
+FST = Σ[ x ∈ TreeShape ] (Σ[ tx ∈ Tree x ] ((V tx) × (L′ tx)))
 
-path-val : Path → FST → Set
-path-val p (x , tx) = 
-    Σ[ y ∈ TreeShape ] 
-        (Σ[ x⇒y ∈ (x ⇒ y) ] Path-⇒ p tx ≡ just (y , x⇒y))  
+-- PATH
+PATH : FST → Set
+PATH (x , _) = Σ[ y ∈ TreeShape ] x ⇒ y
 
-get-sure : (p : Path) → (fx : FST)
-    → path-val p fx → FST 
-get-sure p (x , tx) (y , (x⇒y , eq)) = y , get x⇒y tx
+-- a path is valid if it points to something
+-- and that thing is live
+PATH-VAL : (fx : FST) → PATH fx → Set
+PATH-VAL (_ , (tx , _)) (_ , x⇒y) = L′ (get x⇒y tx) 
 
-is-dir : FST → Set
-is-dir = λ (x , tx) → N x
+-- extract information from a valid path
+-- this is not required by the specification given by
+-- `IsFS` but since we can do it then why not?
+-- in this particular model from a path we can extract a FS 
+EXT : (fx : FST) → (p : PATH fx) → PATH-VAL fx p → FST
+EXT (_ , (tx , (vx , lx))) (y , x⇒y) pv = y , (get x⇒y tx) , V-∀ x⇒y vx , pv
 
-tl-l : ∀ {xs} → TreeList xs → List FST
-tl-l [] = []
-tl-l {x ∷ _} (tx ∷ txs) = (x , tx) ∷ tl-l txs
+-- A file system object is a valid path
+FSOBJ : FST → Set
+FSOBJ fx = Σ[ p ∈ PATH fx ] PATH-VAL fx p
 
-get-children : (fx : FST) → (is-dir fx) → List FST
-get-children (_ , node _ txs) node = tl-l txs
+-- Is an object a node?
+ISDIR : (fx : FST) → FSOBJ fx → Set
+ISDIR fx ((y , _) , pv) = N y
 
-get-parent : (p : Path) → (fx : FST) → path-val p fx 
-    → p ≢ [] → Path
-get-parent [] fx _ neq = ⊥-elim (neq refl)
-get-parent (n ∷ ns) fx _ neq = ns
- 
-_ : IsFS FST
+-- get children..
+GETC : (fx : FST) → (obj : FSOBJ fx) → ISDIR fx obj → List (FSOBJ fx)
+GETC fx@(x , (tx , _)) ((node ys , x⇒y) , pv) node = map-∈ gen-∈ 
+    where
+        gettl : ∀ {ys} → Tree (node ys) → TreeList ys
+        gettl (node _ tys) = tys
+        gen-∈ : ∀ {ys} → List (Σ[ x ∈ TreeShape ] x ∈ ys)
+        gen-∈ {[]} = []
+        gen-∈ {y ∷ ys} = (y , here) ∷ mapˡ 
+            (λ (x , x∈xs) → (x , there x∈xs)) (gen-∈ {ys})
+        ty = get x⇒y tx
+        map-∈ : List (Σ[ x ∈ TreeShape ] x ∈ ys) → List (FSOBJ fx)
+        map-∈ [] = []
+        map-∈ ((z , z∈ys) ∷ rest) with status (get-list z∈ys (gettl ty)) in eq
+        ... | live = ((z , x⇒y +ᵖ tran (child z∈ys) self) , 
+            (begin get-status (x⇒y +ᵖ tran (child z∈ys) self) tx 
+            ≡⟨ cong status (get-+ᵖ x⇒y (tran (child z∈ys) self) tx) ⟩ 
+            get-status (tran (child z∈ys) self) ty 
+            ≡⟨ cong status help ⟩
+            eq)
+            ) ∷ map-∈ rest
+            where
+                guide : ∀ {ys} → (ty : Tree (node ys)) → ty ≡ node (status ty) (gettl ty)
+                guide (node x x₁) = refl
+                useguide : ty ≡ node (status ty) (gettl ty)
+                useguide = guide ty
+                help : get (tran (child z∈ys) self) ty ≡ get-list z∈ys (gettl ty)
+                help = begin 
+                    get (tran (child z∈ys) self) ty 
+                    ≡⟨ cong (get (tran (child z∈ys) self)) useguide ⟩ 
+                    refl
+        ... | erased = map-∈ rest
+
+root : (fx : FST) → FSOBJ fx
+root (x , tx , vx , lx) = (x , self) , lx
+
+-- equality for paths
+data _≡ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set where
+    refl : ∀ {x y} {x⇒y : x ⇒ y} → x⇒y ≡ᵖ x⇒y
+
+≡ᵖ-trans : ∀ {x y z a} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {x⇒a : x ⇒ a} 
+    → x⇒y ≡ᵖ x⇒z → x⇒z ≡ᵖ x⇒a → x⇒y ≡ᵖ x⇒a
+≡ᵖ-trans refl refl = refl
+
+≡ᵖ-sym : ∀ {x y z} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} 
+    → x⇒y ≡ᵖ x⇒z → x⇒z ≡ᵖ x⇒y
+≡ᵖ-sym refl = refl
+
+-- this is so cursed...
+≡-≡ᵖ : ∀ {x y a} {x⇒y : x ⇒ y} {x⇒z : x ⇒ y} {x⇒a : x ⇒ a} 
+    → x⇒y ≡ x⇒z → x⇒z ≡ᵖ x⇒a → x⇒y ≡ᵖ x⇒a
+≡-≡ᵖ refl refl = refl
+
+-- equality for objects, 
+-- since our fs objects contain proofs now, we need an equality
+-- with proof irrelavance (i.e. simply just don't care about it)
+eqo : (fx : FST) → FSOBJ fx → FSOBJ fx → Set
+eqo fx ((y , x⇒y) , pf) ((z , x⇒z) , pf′) = y ≡ z × (x⇒y ≡ᵖ x⇒z)
+
+-- help function for get-parent to reverse induction
+HELP : ∀ {x z} → (x⇒z : x ⇒ z) → ¬ (x⇒z ≡ᵖ self) 
+-- this is even more cursed... but it has to carry the proof...
+-- and the proof is crucial
+    → Σ[ y ∈ TreeShape ] (Σ[ x⇒y ∈ x ⇒ y ] 
+        (Σ[ z∈y ∈ z ∈ᶜ y ] x⇒z ≡ x⇒y +ᵖ tran z∈y self)) 
+HELP self neg = ⊥-elim (neg refl)
+HELP {x} (tran z∈ᶜx y⇒z) neg with y⇒z in eq
+... | self = x , self , z∈ᶜx , refl
+... | tran _ _ = let
+        -- I'm very surprised that it worked...
+            RES_TS , RES_PH , RES_CH , RES_EQ = HELP y⇒z λ eqp → 
+                CONTRA (≡ᵖ-trans (≡ᵖ-sym (≡-≡ᵖ eq refl)) eqp)
+        in RES_TS , tran z∈ᶜx RES_PH , RES_CH , 
+            cong (tran z∈ᶜx) (trans (sym eq) RES_EQ)
+        where
+            CONTRA : ∀ {x y z a b} → tran {y} {x} {z} a b ≡ᵖ self → ⊥
+            CONTRA ()
+
+-- get parent
+GETP : (fx : FST) → (obj : FSOBJ fx) → ¬ (eqo fx obj (root fx)) → FSOBJ fx
+GETP (x , tx , vx , lx) ((.x , self) , eq) neq = ⊥-elim (neq (refl , refl))
+GETP (x , tx , vx , lx) ((_ , x⇒z@(tran _ _)) , lz) neq = let
+        y , x⇒y , z∈y , pf = HELP x⇒z λ ()
+    in (y , x⇒y) , ≤ˢ-max-eq 
+        (≡-≤ˢ (sym lz) 
+        (≡-≤ˢ (cong (λ x → get-status x tx) pf) 
+        (vx x⇒y (tran z∈y self))))
+
+-- removing an object
+RM : (fx : FST) → (obj : FSOBJ fx) → ¬ (eqo fx obj (root fx)) → FST
+RM (x , tx , vx , lx) ((x , self) , eq) neq = ⊥-elim (neq (refl , refl))
+RM (x , tx@(node _ _) , vx , lx) ((y , x⇒y@(tran (child _) _)) , eq) neq = x , 
+    erase x⇒y tx , erase-V x⇒y tx vx , lx
+
+-- adding an object (never thought `add-≡` would be useful here...) 
+AD : (fx : FST) → (obj : FSOBJ fx) → ISDIR fx (root fx) → ISDIR fx obj → FST → FST
+AD (x , fx , vx , lx) ((y , x⇒y) , ly) node node (a , fa , va , la) 
+    = add-shape node node x⇒y a , add x⇒y fx fa , add-V x⇒y vx va ly , 
+    trans (add-≡ node node fx fa x⇒y) lx
+
+_ : ISFS FST
 _ = record { 
-        FSObj = FST
-    ;   is-dir = λ (x , tx) → N x
-    ;   path = List ℕ
-    ;   root = λ x → x 
-    ;   root-path = []
-    ;   path-val = path-val
-    ;   path-get = get-sure
-    ;   get-children = get-children 
-    ;   get-parent = get-parent
-    ;   rm = λ (x , tx) p (y , (x⇒y , eq)) → 
-            x , erase x⇒y tx
-    ;   ad = λ (x , tx) p (y , (x⇒y , eq)) nx ny (a , ta) → 
-            add-shape nx ny x⇒y a , add x⇒y tx ta
+        FSOBJ = FSOBJ
+    ;   ISDIR = ISDIR
+    ;   ROOT = root
+    ;   ISEQ = eqo
+    ;   GETC = GETC 
+    ;   GETP = GETP
+    ;   RM = RM
+    ;   AD = AD
     }
 
 ```
-
-
-```plaintext
-record FSAPI (A : Set) : Set₁ where
-    field
-        -- the notion of validity
-        val : A → Set
-        -- a notion of path is required
-        path : Set
-        -- a path is valid if it points to something 
-        path-val : A → path → Set
-        -- if a path is valid then for sure we can get something
-        get-sure : (x : A) → (p : path) → path-val x p → A
-        -- a predicate to indicate whether
-        -- a path is live (path-live)
-        liv : A → Set
-        -- a predicate to indicate whether the object
-        -- is a node
-        nod : A → Set
-        -- to add a node
-        --   original fs  x itself must be a node 
-        addⁱ : (x : A) → nod x
-        --  a path      p points to something
-            → (p : path) → (pv : path-val x p) 
-        -- p points to a node
-            → nod (get-sure x p pv)
-        -- the new fs to be added    
-            → (a : A) → A
-        -- to remove a node, same story as erase
-        remⁱ : (x : A) → (p : path) → path-val x p → A
-
-get-unsure : Σ[ x ∈ TreeShape ] Tree x → Path 
-    → Maybe (Σ[ y ∈ TreeShape ] Tree y)
-get-unsure (x , tx) p = mapᵐ (λ (y , x⇒y) → y , get x⇒y tx) (Path-⇒ p tx)
-
-
-
-
-
--- is-node, on FST level
-NOD : FST → Set
-NOD = λ (x , tx) → N x
-
--- erasing something, on FST level
-remfs : (fx : FST) → (p : Path) → path-val fx p → FST
-remfs (x , tx) p (y , (x⇒y , eq)) = x , erase x⇒y tx
-
--- adding something, on FST level
-addfs : (fx : FST) → NOD fx  
-        --  a path      p points to something
-        → (p : Path) → (pv : path-val fx p) 
-        -- p points to a node
-        → NOD (get-sure fx p pv)
-        -- the new fs to be added    
-        → (fa : FST) → FST
-addfs (x , tx) nx p (y , (x⇒y , eq)) ny (a , ta)
-    = add-shape nx ny x⇒y a , add x⇒y tx ta
-
--- our model indeed implements the interface
-_ : FSAPI FST
-_ = record{ 
-        val = λ (x , tx) → V tx
-    ;   path = Path
-    ;   get-sure = get-sure
-    ;   path-val = path-val
-    ;   liv = λ (x , tx) → L′ tx
-    ;   nod = NOD
-    ;   addⁱ = addfs
-    ;   remⁱ = remfs
-    }
-   
-```
+ 

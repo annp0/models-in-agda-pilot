@@ -155,6 +155,9 @@ refl-≤ˢ refl = s≤s
 ≤ˢ-max {live} = s≤s
 ≤ˢ-max {erased} = e≤l
 
+≤ˢ-max-eq : ∀ {a} → live ≤ˢ a → a ≡ live
+≤ˢ-max-eq s≤s = refl 
+
 ≤ˢ-min : ∀ {a} → erased ≤ˢ a
 ≤ˢ-min {live} = e≤l
 ≤ˢ-min {erased} = s≤s
@@ -257,6 +260,12 @@ x⇒y ≰ᵖ x⇒z = ¬ (x⇒y ≤ᵖ x⇒z)
 _+ᵖ_ : ∀ {x y z} → x ⇒ y → y ⇒ z → x ⇒ z
 self +ᵖ y⇒z = y⇒z
 tran a∈xs a⇒y +ᵖ y⇒z = tran a∈xs (a⇒y +ᵖ y⇒z)
+
++ᵖ-assoc : ∀ {x y z a} → (x⇒y : x ⇒ y) → (y⇒z : y ⇒ z)
+    → (z⇒a : z ⇒ a) → x⇒y +ᵖ (y⇒z +ᵖ z⇒a) ≡ (x⇒y +ᵖ y⇒z) +ᵖ z⇒a
++ᵖ-assoc self y⇒z z⇒a = refl
++ᵖ-assoc (tran b∈ᶜx b⇒y) y⇒z z⇒a = cong (tran b∈ᶜx) 
+    (+ᵖ-assoc b⇒y y⇒z z⇒a)
 ```
 
 Properties of a tree
@@ -409,6 +418,15 @@ V-All₁ Vx = ∀-All λ x∈xs → Vx self (tran (child x∈xs) self)
 -- `project` validity to the second `All` property
 V-All₂ : ∀ {s xs} {txs : TreeList xs} → V (node s txs) → All V txs
 V-All₂ Vx = ∀-All λ x∈xs → λ x⇒y → λ y⇒z → Vx (tran (child x∈xs) x⇒y) y⇒z  
+
+-- If a tree is valid, then all its objects are valid
+V-∀ : ∀ {x y} {tx : Tree x} → (x⇒y : x ⇒ y) → V tx 
+    → V (get x⇒y tx)
+V-∀ {_} {_} {tx} x⇒y vx y⇒z z⇒a = ≤ˢ-≡ 
+    (≡-≤ˢ (cong status (sym (get-+ᵖ x⇒y (y⇒z +ᵖ z⇒a) tx))) 
+    (≡-≤ˢ (cong (λ p → get-status p tx) (+ᵖ-assoc x⇒y y⇒z z⇒a)) 
+    (vx (x⇒y +ᵖ y⇒z) z⇒a))) 
+    (cong status (get-+ᵖ x⇒y y⇒z tx)) 
 
 h : Status → Status
 h _ = erased
