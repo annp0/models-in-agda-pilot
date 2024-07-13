@@ -4,8 +4,6 @@ module FSInterface where
 open import Data.Product using (_×_; _,_; Σ; Σ-syntax; proj₁; proj₂)
 open import Data.Maybe using (Maybe; just; nothing)
 open import Data.List using (List; []; _∷_; map)
-open import Data.Nat using (ℕ; zero; suc)
-open import Data.String using (String)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; _≢_; refl; trans; sym; cong)
 open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
@@ -16,10 +14,104 @@ open import Tree using (Tree; TreeList; []; _∷_; TreeShape;
     get-list; self; tran; child; _+ᵖ_; get-+ᵖ; get-status;
     _∈ᶜ_; ≤ˢ-max-eq; ≡-≤ˢ; erase; erase-V; add-shape; add-V; add;
     add-≡; live; erased; Status; _≰ᵖ_; erase-other; as-↑;
-    add-other)
+    add-other; add-shape-N; _≤ᵖ_; ≤ᵖ-id; ≤ᵖ-trans)
 ```
 
-```
+## Interface as a record
+
+```agda
+record IsFS (A : Set) : Set₁ where
+    -- `A` is the type of the file system
+    -- The types of FSObj, IsDir and so on might depend on the file system type A
+    field
+        -- Basic types
+        -- what is an Obj of this file system?
+        FSObj : A → Set
+        -- what is root?
+        -- this also implicitly states that the root is unique
+        root : ∀ {a} → FSObj a
+        -- what is the information that an object could contain?
+        Info : Set
+
+        -- Functions & properties related to objects
+        -- equality between objects
+        _≡ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set 
+        -- this relation should be an equivalence relation
+        ≡ᵒ-trans : ∀ {a obj₂ obj₃} {obj₁ : FSObj a} → obj₁ ≡ᵒ obj₂ → obj₂ ≡ᵒ obj₃ → obj₁ ≡ᵒ obj₃
+        ≡ᵒ-sym : ∀ {a obj₁} {obj₂ : FSObj a} → obj₁ ≡ᵒ obj₂ → obj₂ ≡ᵒ obj₁
+    
+    IsNotRoot : ∀ {a} → FSObj a → Set
+    IsNotRoot obj = ¬ (obj ≡ᵒ root)
+
+    field
+        -- what is a directory? (should be decidable)
+        IsDir : ∀ {a} → FSObj a → Set 
+        -- also, root should be a dir
+        RootIsDir : ∀ {a} → IsDir (root {a})
+        -- extracting the information that an object processes
+        extract : ∀ {a} → FSObj a → Info
+
+        -- `contained` relation (should be a partial order)
+        _≤ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
+        -- properties that a partial order should satisfy
+        ≤ᵒ-id : ∀ {a} {obj : FSObj a} → obj ≤ᵒ obj
+        ≤ᵒ-trans : ∀ {a} {obj₁ : FSObj a} {obj₂ obj₃} →
+            obj₁ ≤ᵒ obj₂ → obj₂ ≤ᵒ obj₃ → obj₁ ≤ᵒ obj₃ 
+    
+    -- Previous IsNotContained
+    _≰ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
+    _≰ᵒ_ obj₁ obj₂ = ¬ (obj₁ ≤ᵒ obj₂)
+
+    field
+        -- when we say an object is a child of another object?
+        IsChild : ∀ {a} → FSObj a → FSObj a → Set
+        -- get children of a directory, with the proof that they are indeed children
+        get-children : ∀ {a} → (obj : FSObj a) → IsDir obj 
+            → List (Σ[ kid ∈ (FSObj a) ] IsChild obj kid)
+        -- get the parent (given that the object is not root), with the proof that it is indeed the parent
+        get-parent : ∀ {a} → (obj : FSObj a) → IsNotRoot obj
+            → Σ[ par ∈ (FSObj a) ] IsChild par obj
+
+        -- Functions & properties related to file systems (A)
+        -- removing an object gives another FS
+        remObj : ∀ {a} → (obj : FSObj a) → IsNotRoot obj → A
+        -- for the objects that aren't contained in the removed object, there is
+        -- a mapping to objects of the new FS, and their information is unchanged
+        --                    obj-remove           not-root           obj-original
+        rem-map : ∀ {a} → (objr : FSObj a) → (nr : IsNotRoot objr) → (objo : FSObj a)
+            → objr ≰ᵒ objo
+            → Σ[ objn ∈ FSObj (remObj objr nr) ] extract objo ≡ extract objn
+        -- adding an object gives another FS
+        addFS : ∀ {a} → (obj : FSObj a) → IsDir obj → A → A
+        -- for the objects that aren't contained in the directory that's being modified,
+        -- there is a mapping to objects of the new FS, and their information is unchanged
+        --                     obj-modify      isdir obj-modify
+        add-map : ∀ {a} → (objm : FSObj a) → (idom : IsDir objm) → (b : A)
+            → (objo : FSObj a) → objo ≰ᵒ objm
+            → Σ[ objn ∈ FSObj (addFS objm idom b) ] extract objo ≡ extract objn
+```   
+
+Now we have an interface, it is time to implement this interface based on
+the tree model we already have.
+
+```agda
+-- A file system is a tree that's (1) valid (2) with live root (3) root is a node
+FS : Set
+FS = Σ[ x ∈ TreeShape ] (Σ[ tx ∈ Tree x ] V tx × L′ tx × N x)
+
+-- An Object is a live object of the tree
+FSObj : FS → Set
+FSObj (x , tx , vx , lx , nx) = Σ[ y ∈ TreeShape ] (Σ[ x⇒y ∈ x ⇒ y ] L′ (get x⇒y tx))
+
+-- The root is just the root object of the tree
+root : ∀ {fx} → FSObj fx
+root {(x , tx , vx , lx , nx)} = x , self , lx
+
+-- the information an object would contain is just `Status`
+-- this could be easily extended to strings and so on
+Info : Set
+Info = Status
+
 -- equality for paths
 data _≡ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set where
     refl : ∀ {x y} {x⇒y : x ⇒ y} → x⇒y ≡ᵖ x⇒y
@@ -35,107 +127,46 @@ data _≡ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set where
 ≡-≡ᵖ : ∀ {x y a} {x⇒y : x ⇒ y} {x⇒z : x ⇒ y} {x⇒a : x ⇒ a} 
     → x⇒y ≡ x⇒z → x⇒z ≡ᵖ x⇒a → x⇒y ≡ᵖ x⇒a
 ≡-≡ᵖ refl refl = refl
-```
-
-## Interface as a record
-
-```agda
-record IsFS (A : Set) : Set₁ where
-    -- `A` is the type of the file system
-    -- The types of FSObj, IsDir and so on might depend on the file system type A
-    field
-        -- Basic types
-        -- what is an Obj of this file system?
-        FSObj : A → Set
-        -- what is root?
-        Root : (a : A) → FSObj a
-        -- what is the information that an object could contain?
-        Info : Set
-
-        -- Functions & properties related to objects
-        -- how do we establish equality between objects?
-        IsEq : (a : A) → FSObj a → FSObj a → Set 
-        -- what is a directory?
-        IsDir : (a : A) → FSObj a → Set
-        -- extracting the information that an object processes
-        extract : (a : A) → FSObj a → Info
-        -- when we say an object is contained in another object?
-        -- i.e. We say `IsNotContained a obja objb` when objb is not in the subtree rooted at obja
-        IsNotContained : (a : A) → FSObj a → FSObj a → Set
-        -- when we say an object is a child of another object?
-        IsChild : (a : A) → FSObj a → FSObj a → Set
-        -- get children of a directory, with the proof that they are indeed children
-        get-children : (a : A) → (obj : FSObj a) → IsDir a obj 
-            → List (Σ[ kid ∈ (FSObj a) ] IsChild a obj kid)
-        -- get the parent (given that the object is not root), with the proof that it is indeed the parent
-        get-parent : (a : A) → (obj : FSObj a) → ¬ (IsEq a obj (Root a)) 
-            → Σ[ par ∈ (FSObj a) ] IsChild a par obj
-        
-        -- Functions & properties related to file systems (A)
-        -- removing an object gives another FS
-        remObj : (a : A) → (obj : FSObj a) → ¬ (IsEq a obj (Root a)) → A
-        -- for the objects that aren't contained in the removed object, there is
-        -- a mapping to objects of the new FS, and their information is unchanged
-        --                    obj-remove                 not-root                obj-original
-        rem-map : (a : A) → (objr : FSObj a) → (nr : ¬ (IsEq a objr (Root a))) → (objo : FSObj a)
-            → IsNotContained a objr objo 
-            → (let newFS = (remObj a objr nr))
-            → Σ[ objn ∈ FSObj newFS ] extract a objo ≡ extract newFS objn
-        -- adding an object gives another FS
-        addFS : (a : A) → (obj : FSObj a) → IsDir a (Root a) → IsDir a obj → A → A
-        -- for the objects that aren't contained in the directory that's being modified,
-        -- there is a mapping to objects of the new FS, and their information is unchanged
-        --                     obj-modify             isdir root            isdir obj-modify
-        add-map : (a : A) → (objm : FSObj a) → (idr : IsDir a (Root a)) → (idom : IsDir a objm) → (b : A)
-            → (objo : FSObj a) → IsNotContained a objo objm
-            → (let newFS = addFS a objm idr idom b)
-            → Σ[ objn ∈ FSObj newFS ] extract a objo ≡ extract newFS objn
-```        
-
-Now we have an interface, it is time to implement this interface based on
-the tree model we already have.
-
-```agda
--- A file system is a tree that's (1) valid (2) with live root
-FS : Set
-FS = Σ[ x ∈ TreeShape ] (Σ[ tx ∈ Tree x ] ((V tx) × (L′ tx)))
-
--- An Object is a live object of the tree
-FSObj : FS → Set
-FSObj (x , tx , vx , lx) = Σ[ y ∈ TreeShape ] (Σ[ x⇒y ∈ x ⇒ y ] L′ (get x⇒y tx))
-
--- The root is just the root object of the tree
-root : (fx : FS) → FSObj fx
-root (x , tx , vx , lx) = x , self , lx
-
--- the information an object would contain is just `Status`
--- this could be easily extended to strings and so on
-Info : Set
-Info = Status
 
 -- equality for objects, 
 -- since our fs objects contain proofs now, we need an equality
 -- with proof irrelavance (i.e. simply just don't care about it)
-eqo : (fx : FS) → FSObj fx → FSObj fx → Set
-eqo _ (y , x⇒y , pf) (z , x⇒z , pf′) = y ≡ z × (x⇒y ≡ᵖ x⇒z)
+_≡ᵒ_ : ∀ {fx : FS} → FSObj fx → FSObj fx → Set
+(y , x⇒y , pf) ≡ᵒ (z , x⇒z , pf′) = y ≡ z × (x⇒y ≡ᵖ x⇒z)
 
-isdir : (fx : FS) → FSObj fx → Set
-isdir _ (y , _ , _) = N y
+≡ᵒ-trans : ∀ {fx} {obj₁ obj₂ obj₃ : FSObj fx} → _≡ᵒ_ {fx} obj₁ obj₂ → _≡ᵒ_ {fx} obj₂ obj₃ 
+    → _≡ᵒ_ {fx} obj₁ obj₃
+≡ᵒ-trans (a=b , pa=b) (b=c , pb=c) = trans a=b b=c , ≡ᵖ-trans pa=b pb=c
 
-extract : (fx : FS) → FSObj fx → Status
-extract (_ , tx , _ , _) (_ , x⇒y , _) = get-status x⇒y tx 
+≡ᵒ-sym : ∀ {fx : FS} {obj₁} {obj₂ : FSObj fx} → _≡ᵒ_ {fx} obj₁ obj₂ → _≡ᵒ_ {fx} obj₂ obj₁
+≡ᵒ-sym (refl , refl) = refl , refl
 
--- not contained
-notcon : (fx : FS) → FSObj fx → FSObj fx → Set
-notcon _ (_ , x⇒y , _) (_ , x⇒z , _) = x⇒y ≰ᵖ x⇒z
+isdir : ∀ {fx} → FSObj fx → Set
+isdir (y , _ , _) = N y
+
+rootisdir : ∀ {fx} → isdir {fx} (root {fx})
+rootisdir {(x , _ , _ , lx , nx)} = nx
+
+extract : ∀ {fx} → FSObj fx → Status
+extract {_ , tx , _ , _} (_ , x⇒y , _) = get-status x⇒y tx 
+
+_≤ᵒ_ : ∀ {fx} → FSObj fx → FSObj fx → Set
+(_ , x⇒y , _) ≤ᵒ (_ , x⇒z , _) = x⇒y ≤ᵖ x⇒z
+
+≤ᵒ-id : ∀ {fx} {obj : FSObj fx} → _≤ᵒ_ {fx} obj obj
+≤ᵒ-id = ≤ᵖ-id
+
+≤ᵒ-trans : ∀ {fx} {obj₁ : FSObj fx} {obj₂ obj₃} →
+    _≤ᵒ_ {fx} obj₁ obj₂ → _≤ᵒ_ {fx} obj₂ obj₃ → _≤ᵒ_ {fx} obj₁ obj₃ 
+≤ᵒ-trans a b = ≤ᵖ-trans a b
 
 -- ischild
-iskid : (fx : FS) → FSObj fx → FSObj fx → Set
-iskid _ (x , _) (y , _) = y ∈ᶜ x
+iskid : ∀ {fx} → FSObj fx → FSObj fx → Set
+iskid (x , _) (y , _) = y ∈ᶜ x
 
-get-children : (fx : FS) → (obj : FSObj fx) → isdir fx obj 
-    → List (Σ[ kid ∈ (FSObj fx) ] iskid fx obj kid)
-get-children fx@(x , tx , _) obj@(node ys , x⇒y , pv) node = map-∈ gen-∈
+get-children : ∀ {fx} → (obj : FSObj fx) → isdir {fx} obj 
+    → List (Σ[ kid ∈ (FSObj fx) ] iskid {fx} obj kid)
+get-children {fx@(x , tx , _)} obj@(node ys , x⇒y , pv) node = map-∈ gen-∈
     where
         ty = get x⇒y tx
         -- get the treelist associated with a node
@@ -148,7 +179,7 @@ get-children fx@(x , tx , _) obj@(node ys , x⇒y , pv) node = map-∈ gen-∈
             (λ (x , x∈xs) → (x , there x∈xs)) (gen-∈ {ys})
         -- map the list of membership relations to children
         map-∈ : List (Σ[ x ∈ TreeShape ] x ∈ ys) 
-            → List (Σ[ kid ∈ (FSObj fx) ] iskid fx obj kid)
+            → List (Σ[ kid ∈ (FSObj fx) ] iskid {fx} obj kid)
         map-∈ [] = []
         map-∈ ((z , z∈ys) ∷ rest) with status (get-list z∈ys (get-tl ty)) in eq
         ... | live = ((z , x⇒y +ᵖ tran (child z∈ys) self , 
@@ -182,10 +213,10 @@ gp-help {x} (tran z∈ᶜx y⇒z) neg with y⇒z in eq
             CONTRA ()
 
 -- get parent
-get-parent : (fx : FS) → (obj : FSObj fx) → ¬ (eqo fx obj (root fx)) 
-    → Σ[ par ∈ FSObj fx ] iskid fx par obj
-get-parent (x , tx , vx , lx) (x , self , eq) neq = ⊥-elim (neq (refl , refl))
-get-parent (x , tx , vx , lx) (_ , x⇒z@(tran _ _) , lz) neq = let
+get-parent : ∀ {fx} → (obj : FSObj fx) → ¬ (_≡ᵒ_ {fx} obj (root {fx})) 
+    → Σ[ par ∈ FSObj fx ] iskid {fx} par obj
+get-parent (x , self , eq) neq = ⊥-elim (neq (refl , refl))
+get-parent {x , tx , vx , lx} (_ , x⇒z@(tran _ _) , lz) neq = let
         y , x⇒y , z∈y , pf = gp-help x⇒z λ ()
     in
         (y , x⇒y , 
@@ -193,49 +224,53 @@ get-parent (x , tx , vx , lx) (_ , x⇒z@(tran _ _) , lz) neq = let
         (≡-≤ˢ (cong (λ x → get-status x tx) pf) (vx x⇒y (tran z∈y self))))) , 
         z∈y
 
-remObj : (fx : FS) → (obj : FSObj fx) → ¬ (eqo fx obj (root fx)) → FS
-remObj (x , tx , vx , lx) (x , self , eq) neq = ⊥-elim (neq (refl , refl))
-remObj (x , tx@(node _ _) , vx , lx) (y , x⇒y@(tran (child _) _) , eq) neq = x , 
+remObj : ∀ {fx} → (obj : FSObj fx) → ¬ (_≡ᵒ_ {fx} obj (root {fx})) → FS
+remObj (x , self , eq) neq = ⊥-elim (neq (refl , refl))
+remObj {x , tx@(node _ _) , vx , lx} (y , x⇒y@(tran (child _) _) , eq) neq = x , 
     erase x⇒y tx , erase-V x⇒y tx vx , lx
 
-rem-map : (fx : FS) → (objr : FSObj fx) → (nr : ¬ (eqo fx objr (root fx)))
-    → (objo : FSObj fx) → notcon fx objr objo
-    → Σ[ objn ∈ FSObj (remObj fx objr nr) ] extract fx objo ≡ extract (remObj fx objr nr) objn
-rem-map (x , tx , vx , lx) (x , self , eq) neq _ _ = ⊥-elim (neq (refl , refl))
+rem-map : (fx : FS) → (objr : FSObj fx) → (nr : ¬ (_≡ᵒ_ {fx} objr (root {fx})))
+    → (objo : FSObj fx) → ¬ (_≤ᵒ_ {fx} objr objo)
+    → Σ[ objn ∈ FSObj (remObj {fx} objr nr) ] extract {fx} objo ≡ extract {remObj objr nr} objn
+rem-map (x , tx , vx , _) (x , self , eq) neq _ _ = ⊥-elim (neq (refl , refl))
 rem-map (x , tx@(node _ _) , _) (y , x⇒y@(tran (child _) _) , _) nr (a , x⇒a , la) nc 
     = (a , x⇒a , trans (sym eq) la) , eq
     where
         eq = erase-other x⇒y x⇒a nc tx
 
-addFS : (fx : FS) → (obj : FSObj fx) → isdir fx (root fx) → isdir fx obj → FS → FS
-addFS (x , fx , vx , lx) (y , x⇒y , ly) node node (a , fa , va , la) 
-    = add-shape node node x⇒y a , add x⇒y fx fa , add-V x⇒y vx va ly , 
-    trans (add-≡ node node fx fa x⇒y) lx
+addFS : ∀ {fx} → (obj : FSObj fx) → isdir {fx} obj → FS → FS
+addFS {fx@(x , tx , vx , lx , nx)} (y , x⇒y , ly) node (a , fa , va , la) 
+    = add-shape (rootisdir {fx}) node x⇒y a , add x⇒y tx fa , add-V x⇒y vx va ly , 
+    trans (add-≡ (rootisdir {fx}) node tx fa x⇒y) lx , add-shape-N (rootisdir {fx}) node x⇒y 
 
-add-map : (fx : FS) → (objm : FSObj fx) → (idr : isdir fx (root fx)) → (idom : isdir fx objm) 
-    → (fa : FS)
-    → (objo : FSObj fx) → notcon fx objo objm
-    → (let newFS = addFS fx objm idr idom fa)
-    → Σ[ objn ∈ FSObj newFS ] extract fx objo ≡ extract newFS objn
-add-map (x , fx , vx , lx) (y , x⇒y , ly) node node (a , fa , va , la) (b , x⇒b , lb) nc = 
+add-map : ∀ {fx} → (objm : FSObj fx) → (idom : isdir {fx} objm) → (fa : FS)
+    → (objo : FSObj fx) → ¬ (_≤ᵒ_ {fx} objo objm)
+    → Σ[ objn ∈ FSObj (addFS {fx} objm idom fa) ] extract {fx} objo ≡ extract {addFS {fx} objm idom fa} objn
+add-map {fx@(x , tx , vx , _)} (y , x⇒y , ly) node (a , fa , va , _) (b , x⇒b , lb) nc = 
     (b , as-↑ x⇒y x⇒b nc a , trans (sym eq) lb) , eq
     where
-        eq = add-other {_} {_} {node} {node} x⇒y x⇒b nc fx fa ly
+        eq = add-other {_} {_} {rootisdir {fx}} {node} x⇒y x⇒b nc tx fa ly
+```
 
-
+```agda
 _ : IsFS FS
-_ = record { FSObj = FSObj
-    ; Root = root
+_ = record{ FSObj = FSObj
+    ; root = root -- a lot of yellow, maybe becasue of eta-equality?
     ; Info = Info
-    ; IsEq = eqo
+    ; _≡ᵒ_ = _≡ᵒ_
+    ; ≡ᵒ-trans = ≡ᵒ-trans
+    ; ≡ᵒ-sym = ≡ᵒ-sym
     ; IsDir = isdir
+    ; RootIsDir = rootisdir
     ; extract = extract
-    ; IsNotContained = notcon
+    ; _≤ᵒ_ = _≤ᵒ_
+    ; ≤ᵒ-id = ≤ᵒ-id
+    ; ≤ᵒ-trans = ≤ᵒ-trans
     ; IsChild = iskid
     ; get-children = get-children
     ; get-parent = get-parent
     ; remObj = remObj
-    ; rem-map = rem-map
+    ; rem-map = {! rem-map  !}
     ; addFS = addFS
     ; add-map = add-map
     }

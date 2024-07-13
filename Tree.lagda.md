@@ -241,7 +241,7 @@ _⇏_ x y = ¬ (x ⇒ y)
 
 -- compare the path 'chain'
 data _≤ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set where
-    zero : ∀ {x y} {x⇒x : x ⇒ x} {x⇒y : x ⇒ y} → x⇒x ≤ᵖ x⇒y
+    zero : ∀ {x y} {x⇒y : x ⇒ y} → self ≤ᵖ x⇒y
     succ : ∀ {x y z a} {y⇒a : y ⇒ a} {y⇒z : y ⇒ z} {y∈x : y ∈ᶜ x} → 
             y⇒a ≤ᵖ y⇒z → (tran y∈x y⇒a) ≤ᵖ (tran y∈x y⇒z)
 
@@ -252,9 +252,10 @@ x⇒y ≰ᵖ x⇒z = ¬ (x⇒y ≤ᵖ x⇒z)
 ≤ᵖ-id {x} {x} {self} = zero
 ≤ᵖ-id {x} {z} {tran y∈x y⇒z} = succ ≤ᵖ-id
 
--- ≤ᵖ is indeed unnecessary since
--- the 'meaning' of x⇒y ≰ᵖ x⇒z is equivalent to y⇏z
--- but I like this definition
+≤ᵖ-trans : ∀ {x y z a} {x⇒y : x ⇒ y} {x⇒z : x ⇒ z} {x⇒a : x ⇒ a}
+    → x⇒y ≤ᵖ x⇒z → x⇒z ≤ᵖ x⇒a → x⇒y ≤ᵖ x⇒a
+≤ᵖ-trans zero z≤a = zero
+≤ᵖ-trans (succ y≤z) (succ z≤a) = succ (≤ᵖ-trans y≤z z≤a)
 
 -- A basic property for _⇒_
 _+ᵖ_ : ∀ {x y z} → x ⇒ y → y ⇒ z → x ⇒ z
@@ -537,6 +538,12 @@ add-shape {node xs} node node self z = node (list-add z xs)
 add-shape {node xs} node node (tran {leaf} (child y∈xs) (tran () _)) a
 add-shape {node xs} node node (tran {node x} (child y∈xs) y⇒z) a = 
     node (list-set y∈xs (add-shape node node y⇒z a))
+
+add-shape-N : ∀ {x y a} → (nx : N x) → (ny : N y) → (x⇒y : x ⇒ y)
+    → N (add-shape nx ny x⇒y a) 
+add-shape-N node node self = node
+add-shape-N node node (tran {leaf} r (tran () y⇒z))
+add-shape-N node node (tran {node x} (child x₁) y⇒z) = node
 ```
 
 Back on the `lift` and `new` properties for `add-shape`
