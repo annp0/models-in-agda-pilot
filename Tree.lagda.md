@@ -3,92 +3,14 @@ open import Data.List using (List; []; _∷_)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; _≢_; refl; trans; sym; cong)
 open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
-open import Relation.Nullary using (¬_)
+open import Relation.Nullary using (¬_; Dec; yes; no)
 open import Data.Empty using (⊥; ⊥-elim)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.Maybe using (Maybe; just; nothing)
 open import Data.Product using (Σ; Σ-syntax; _,_; proj₁; proj₂)
 ```
 
-## Specifications
-
-1. A FileSystem is abstract (i.e. not concrete)
-2. A File System has two main concepts:
-  a. directories
-  b. files
-3. files live 'in' a directory (its parent)
-4. directories may also live in another directory (its parent)
-5. there is a root directory that has no parent
-6. a directory is valid if its eventual parent is the root directory
-7. a file is valid if it is in a valid directory
-8. one can add files and directories to a file system (and get a new fs)
-9. one can remove files and directories from a fs (and get a new fs)
-10. adding X to an FS and then immediately deleting it yiels an equivalent fs
-11. a derived concept is that of path, which is the inverse graph of 'parent'
-
-## Interpretation of the specifications
-
-A. A `FileSystem` is modeled as a rose tree, where `directory`
-    corresponds to `node` and `file` corresponds to `leaf`. Because of 
-    technical difficulties, we cannot just "remove" a subtree
-    from a tree. Therefore, we take a compromise: we mark each object in
-    the tree with a `Status` in which it indicates whether it is `erased`
-    or not. We say a tree is `Valid` when: 
-        (1) All of its children is `Valid`
-        (2) For every `erased` node, all of its children must be `erased` as well. 
-    A `FileSystem` is then a `Valid` `Tree`.
-    Specification 1, 2, 3, 4, 5, 6, 7 are automatically satisfied.
-
-B. `Tree` is indexed by `TreeShape`, and `TreeShape` acts as paths.
-    This satisfies Specification 11.
-    Notice that the paths here also serves as proof of membership.
-    (Maybe the advantage of dependent types?)
-    
-C. "Removing" a tree, in this context, is just marking a node
-    as `erased`. We proved:
-        (1) `erase` something in a valid tree will return a valid tree
-        (2) this operation won't change the content of other files in the system 
-    Since no change to the tree structure is made, there is no change on paths.
-    This satisfies Specification 9.
-
-D. "Adding" a tree will literally add a new subtree. Therefore, it will
-    change the tree structure (`add-shape`). With this function comes with
-    two properties:
-        (1) `as-+`: gives the path to the freshly added subtree
-        (2) `as-↑`: lifts an original path to a new path in the
-            new tree
-    On tree level, we proved that: 
-        (3) adding a valid tree to a valid tree would return
-            a valid tree still
-        (4) this operation won't change the content of other files in the
-            system
-    This satisfies Specification 8.
-
-E. Combining (C2) and (D4) gives us Specification 10.
-
-## APIs
-
-| Specification | Implementation |
-| ------------- | -------------- |
-| Path          | `TreeShape`    |
-| Tree Structure| `Tree`         |
-| File System   | `V`            |
-| Remove        | `erase`        |
-| Property (C1) | `erase-V`      |
-| Property (C2) | `erase-other`  |
-| Add           | `add`          |
-| Property (D3) | `add-V`        |
-| Property (D4) | `add-other`    |
-
 ## Implementation
-
-We use the simplified definition of `Dec`.
-
-```agda
-data Dec (A : Set) : Set where
-    yes : A → Dec A
-    no  : ¬ A → Dec A
-```
 
 To get a content-independent path, we define the shape of a tree.
 
@@ -96,6 +18,27 @@ To get a content-independent path, we define the shape of a tree.
 data TreeShape : Set where
     leaf    : TreeShape
     node    : List TreeShape → TreeShape
+
+-- decidable eq for whether two shapes are equal
+_≡?_ : ∀ (x y : TreeShape) → Dec (x ≡ y)
+_≡?-help_ : ∀ (xs ys : List TreeShape) → Dec (xs ≡ ys)
+leaf ≡? leaf = yes refl
+leaf ≡? node _ = no λ ()
+node _ ≡? leaf = no λ ()
+node xs ≡? node ys with xs ≡?-help ys
+... | yes refl = yes refl
+... | no neq = no λ {refl → neq refl}
+[] ≡?-help [] = yes refl
+[] ≡?-help (_ ∷ _) = no λ ()
+(x ∷ xs) ≡?-help [] = no λ ()
+(x ∷ xs) ≡?-help (y ∷ ys) with x ≡? y
+... | yes refl = help 
+    where 
+        help : Dec (x ∷ xs ≡ x ∷ ys) 
+        help with xs ≡?-help ys
+        ... | yes refl = yes refl
+        ... | no neq = no λ {refl → neq refl}
+... | no neq = no λ {refl → neq refl}
 ```
 
 Trees are indexed by TreeShape, just like `Vec Nat` and `Nat`
@@ -257,6 +200,10 @@ x⇒y ≰ᵖ x⇒z = ¬ (x⇒y ≤ᵖ x⇒z)
 ≤ᵖ-trans zero z≤a = zero
 ≤ᵖ-trans (succ y≤z) (succ z≤a) = succ (≤ᵖ-trans y≤z z≤a)
 
+≤ᵖ-≡ : ∀ {x y a} {x⇒y : x ⇒ y} {x⇒z : x ⇒ y} {x⇒a : x ⇒ a}
+    → x⇒a ≤ᵖ x⇒y → x⇒y ≡ x⇒z → x⇒a ≤ᵖ x⇒z
+≤ᵖ-≡ a≤y refl = a≤y
+
 -- A basic property for _⇒_
 _+ᵖ_ : ∀ {x y z} → x ⇒ y → y ⇒ z → x ⇒ z
 self +ᵖ y⇒z = y⇒z
@@ -267,6 +214,10 @@ tran a∈xs a⇒y +ᵖ y⇒z = tran a∈xs (a⇒y +ᵖ y⇒z)
 +ᵖ-assoc self y⇒z z⇒a = refl
 +ᵖ-assoc (tran b∈ᶜx b⇒y) y⇒z z⇒a = cong (tran b∈ᶜx) 
     (+ᵖ-assoc b⇒y y⇒z z⇒a)
+
+≤ᵖ-+ᵖ : ∀ {x y z} {x⇒y : x ⇒ y} {y⇒z : y ⇒ z} → x⇒y ≤ᵖ (x⇒y +ᵖ y⇒z)
+≤ᵖ-+ᵖ {_} {_} {_} {self} {y⇒z} = zero
+≤ᵖ-+ᵖ {_} {_} {_} {tran b∈x b⇒y} {y⇒z} = succ ≤ᵖ-+ᵖ
 ```
 
 Properties of a tree
@@ -275,6 +226,11 @@ Properties of a tree
 -- is-node
 data N : TreeShape → Set where
     node : ∀ {xs} → N (node xs)
+
+-- decidable for is-node
+N? : ∀ (x) → Dec (N x)
+N? leaf = no λ ()
+N? (node _) = yes node
 
 data All (P : ∀ {x} → Tree x → Set) : ∀ {xs} → TreeList xs → Set where
     []  : All P []

@@ -8,13 +8,17 @@ import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; _≢_; refl; trans; sym; cong)
 open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
 open import Data.Empty using (⊥; ⊥-elim)
-open import Relation.Nullary using (¬_)
+open import Relation.Nullary using (¬_; Dec; yes; no)
+open import Relation.Nullary.Negation using (¬?)
+open import Relation.Nullary.Product using (_×-dec_)
+open import Relation.Binary.Structures using (IsEquivalence; IsPreorder)
 open import Tree using (Tree; TreeList; []; _∷_; TreeShape;
     V; L′; _⇒_; get; V-∀; N; node; _∈_; here; there; status;
     get-list; self; tran; child; _+ᵖ_; get-+ᵖ; get-status;
     _∈ᶜ_; ≤ˢ-max-eq; ≡-≤ˢ; erase; erase-V; add-shape; add-V; add;
     add-≡; live; erased; Status; _≰ᵖ_; erase-other; as-↑;
-    add-other; add-shape-N; _≤ᵖ_; ≤ᵖ-id; ≤ᵖ-trans)
+    add-other; add-shape-N; _≤ᵖ_; ≤ᵖ-id; ≤ᵖ-trans; _≡ᵐ_; _≡ᵐ?_; 
+    refl; _≡?_; N?; ≤ᵖ-+ᵖ; ≤ᵖ-≡)
 ```
 
 ## Interface as a record
@@ -27,7 +31,7 @@ record IsFS (A : Set) : Set₁ where
         -- Basic types
         -- what is an Obj of this file system?
         FSObj : A → Set
-        -- what is root?
+        -- what is the root?
         -- this also implicitly states that the root is unique
         root : ∀ {a} → FSObj a
         -- what is the information that an object could contain?
@@ -37,34 +41,42 @@ record IsFS (A : Set) : Set₁ where
         -- equality between objects
         _≡ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set 
         -- this relation should be an equivalence relation
-        ≡ᵒ-trans : ∀ {a obj₂ obj₃} {obj₁ : FSObj a} → obj₁ ≡ᵒ obj₂ → obj₂ ≡ᵒ obj₃ → obj₁ ≡ᵒ obj₃
-        ≡ᵒ-sym : ∀ {a obj₁} {obj₂ : FSObj a} → obj₁ ≡ᵒ obj₂ → obj₂ ≡ᵒ obj₁
+        ≡ᵒ-prop : ∀ {a} → IsEquivalence (_≡ᵒ_ {a})
+        -- this should be decidable
+        _≡ᵒ?_ : ∀ {a} (obj₁ obj₂ : FSObj a) → Dec (obj₁ ≡ᵒ obj₂) 
     
+    -- and now IsNotRoot is decidable (as it should be)
+    -- this also implies that an obj is either the root or not the root, no middle ground
     IsNotRoot : ∀ {a} → FSObj a → Set
     IsNotRoot obj = ¬ (obj ≡ᵒ root)
+    IsNotRoot? : ∀ {a} (obj : FSObj a) → Dec (IsNotRoot obj)
+    IsNotRoot? obj = ¬? (obj ≡ᵒ? root)
 
     field
         -- what is a directory? (should be decidable)
         IsDir : ∀ {a} → FSObj a → Set 
+        IsDir? : ∀ {a} → (obj : FSObj a) → Dec (IsDir obj)
         -- also, root should be a dir
-        RootIsDir : ∀ {a} → IsDir (root {a})
+        RootIsDir : ∀ (a : A) → IsDir (root {a})
         -- extracting the information that an object processes
         extract : ∀ {a} → FSObj a → Info
 
-        -- `contained` relation (should be a partial order)
+        -- `contained` relation (should be a pre order)
         _≤ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
-        -- properties that a partial order should satisfy
-        ≤ᵒ-id : ∀ {a} {obj : FSObj a} → obj ≤ᵒ obj
-        ≤ᵒ-trans : ∀ {a} {obj₁ : FSObj a} {obj₂ obj₃} →
-            obj₁ ≤ᵒ obj₂ → obj₂ ≤ᵒ obj₃ → obj₁ ≤ᵒ obj₃ 
+        -- properties that a pre order should satisfy
+        ≤ᵒ-prop : ∀ {a} → IsPreorder (_≡ᵒ_ {a}) (_≤ᵒ_ {a}) 
     
     -- Previous IsNotContained
     _≰ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
     _≰ᵒ_ obj₁ obj₂ = ¬ (obj₁ ≤ᵒ obj₂)
 
     field
-        -- when we say an object is a child of another object?
+        -- when do we say an object is a child of another object?
         IsChild : ∀ {a} → FSObj a → FSObj a → Set
+        -- how does IsChild interact with the rest of the interface?
+        IsChild-≤ᵒ : ∀ {a} {par kid : FSObj a} → IsChild par kid → par ≤ᵒ kid
+        IsChild-IsDir : ∀ {a} {par kid : FSObj a} → IsChild par kid → IsDir par
+
         -- get children of a directory, with the proof that they are indeed children
         get-children : ∀ {a} → (obj : FSObj a) → IsDir obj 
             → List (Σ[ kid ∈ (FSObj a) ] IsChild obj kid)
@@ -86,8 +98,8 @@ record IsFS (A : Set) : Set₁ where
         -- for the objects that aren't contained in the directory that's being modified,
         -- there is a mapping to objects of the new FS, and their information is unchanged
         --                     obj-modify      isdir obj-modify
-        add-map : ∀ {a} → (objm : FSObj a) → (idom : IsDir objm) → (b : A)
-            → (objo : FSObj a) → objo ≰ᵒ objm
+        add-map : ∀ {a} → (objm : FSObj a) → (idom : IsDir objm) 
+            → (objo : FSObj a) → objo ≰ᵒ objm → (b : A)
             → Σ[ objn ∈ FSObj (addFS objm idom b) ] extract objo ≡ extract objn
 ```   
 
@@ -96,16 +108,30 @@ the tree model we already have.
 
 ```agda
 -- A file system is a tree that's (1) valid (2) with live root (3) root is a node
-FS : Set
-FS = Σ[ x ∈ TreeShape ] (Σ[ tx ∈ Tree x ] V tx × L′ tx × N x)
+record FS : Set where
+    constructor fs
+    field
+        -- TreeShape of the fs
+        shape : TreeShape
+        -- The root tree of the fs (f-root)
+        froot : Tree shape 
+        -- The tree is valid
+        valid : V froot
+        -- The tree has live root
+        isliv : L′ froot
+        -- The tree's root is a directory (node)
+        isdir : N shape
+open FS
 
 -- An Object is a live object of the tree
-FSObj : FS → Set
-FSObj (x , tx , vx , lx , nx) = Σ[ y ∈ TreeShape ] (Σ[ x⇒y ∈ x ⇒ y ] L′ (get x⇒y tx))
+-- using datatypes could block eta-equality help unification
+-- so we may use implicits freely 
+data FSObj (fx : FS) : Set where
+    fsobj : (y : TreeShape) → (x⇒y : (shape fx) ⇒ y) → L′ (get x⇒y (froot fx)) → FSObj fx
 
 -- The root is just the root object of the tree
 root : ∀ {fx} → FSObj fx
-root {(x , tx , vx , lx , nx)} = x , self , lx
+root {fx} = fsobj (shape fx) self (isliv fx)
 
 -- the information an object would contain is just `Status`
 -- this could be easily extended to strings and so on
@@ -128,46 +154,85 @@ data _≡ᵖ_ : ∀ {x y z} → x ⇒ y → x ⇒ z → Set where
     → x⇒y ≡ x⇒z → x⇒z ≡ᵖ x⇒a → x⇒y ≡ᵖ x⇒a
 ≡-≡ᵖ refl refl = refl
 
+-- obvious but helpful
+p-contra : ∀ {x y z a b} → tran {y} {x} {z} a b ≡ᵖ self → ⊥
+p-contra ()
+
+-- decidable algorithm
+_≡ᵖ?_ : ∀ {x y z} → (x⇒y : x ⇒ y) → (x⇒z : x ⇒ z) → Dec (x⇒y ≡ᵖ x⇒z) 
+self ≡ᵖ? self = yes refl
+self ≡ᵖ? tran _ _ = no λ eq → p-contra (≡ᵖ-sym eq)
+tran _ _ ≡ᵖ? self = no λ eq → p-contra eq
+-- ≡ᵐ comes in handy
+tran (child b∈xs) b⇒y ≡ᵖ? tran (child c∈xs) c⇒z with b∈xs ≡ᵐ? c∈xs 
+... | yes refl = help
+    where
+        help : Dec (tran (child b∈xs) b⇒y ≡ᵖ tran (child c∈xs) c⇒z)
+        help with b⇒y ≡ᵖ? c⇒z 
+        ... | yes refl = yes refl
+        ... | no neq = no λ {refl → neq refl}
+... | no neq = no λ {refl → neq refl}
+
 -- equality for objects, 
 -- since our fs objects contain proofs now, we need an equality
 -- with proof irrelavance (i.e. simply just don't care about it)
 _≡ᵒ_ : ∀ {fx : FS} → FSObj fx → FSObj fx → Set
-(y , x⇒y , pf) ≡ᵒ (z , x⇒z , pf′) = y ≡ z × (x⇒y ≡ᵖ x⇒z)
+(fsobj y x⇒y pf) ≡ᵒ (fsobj z x⇒z pf′) = y ≡ z × (x⇒y ≡ᵖ x⇒z)
 
-≡ᵒ-trans : ∀ {fx} {obj₁ obj₂ obj₃ : FSObj fx} → _≡ᵒ_ {fx} obj₁ obj₂ → _≡ᵒ_ {fx} obj₂ obj₃ 
-    → _≡ᵒ_ {fx} obj₁ obj₃
-≡ᵒ-trans (a=b , pa=b) (b=c , pb=c) = trans a=b b=c , ≡ᵖ-trans pa=b pb=c
+≡ᵒ-id : ∀ {fx} {obj : FSObj fx} → obj ≡ᵒ obj
+≡ᵒ-id {_} {fsobj _ _ _} = refl , refl
 
-≡ᵒ-sym : ∀ {fx : FS} {obj₁} {obj₂ : FSObj fx} → _≡ᵒ_ {fx} obj₁ obj₂ → _≡ᵒ_ {fx} obj₂ obj₁
-≡ᵒ-sym (refl , refl) = refl , refl
+≡ᵒ-trans : ∀ {fx} {obj₁ obj₂ obj₃ : FSObj fx} → obj₁ ≡ᵒ obj₂ → obj₂ ≡ᵒ obj₃ → obj₁ ≡ᵒ obj₃
+≡ᵒ-trans {_} {fsobj _ _ _} {fsobj _ _ _} {fsobj _ _ _}
+    (a=b , pa=b) (b=c , pb=c) = trans a=b b=c , ≡ᵖ-trans pa=b pb=c
 
-isdir : ∀ {fx} → FSObj fx → Set
-isdir (y , _ , _) = N y
+≡ᵒ-sym : ∀ {fx : FS} {obj₁} {obj₂ : FSObj fx} → obj₁ ≡ᵒ obj₂ → obj₂ ≡ᵒ obj₁
+≡ᵒ-sym {_} {fsobj _ _ _} {fsobj _ _ _} (refl , refl) = refl , refl
 
-rootisdir : ∀ {fx} → isdir {fx} (root {fx})
-rootisdir {(x , _ , _ , lx , nx)} = nx
+-- derived decidable
+_≡ᵒ?_ : ∀ {fx : FS} (ox oy : FSObj fx) → Dec (ox ≡ᵒ oy)
+fx@(fsobj y x⇒y _) ≡ᵒ? fy@(fsobj z x⇒z _) = (y ≡? z) ×-dec (x⇒y ≡ᵖ? x⇒z)
+
+IsDir : ∀ {fx} → FSObj fx → Set
+IsDir (fsobj y _ _) = N y
+
+IsDir? : ∀ {fx} → (obj : FSObj fx) → Dec (IsDir obj)
+IsDir? (fsobj y _ _) = N? y
+
+rootisdir : ∀ {fx} → IsDir (root {fx})
+rootisdir {fx} = isdir fx
 
 extract : ∀ {fx} → FSObj fx → Status
-extract {_ , tx , _ , _} (_ , x⇒y , _) = get-status x⇒y tx 
+extract {fx} (fsobj _ x⇒y _) = get-status x⇒y (froot fx)
 
 _≤ᵒ_ : ∀ {fx} → FSObj fx → FSObj fx → Set
-(_ , x⇒y , _) ≤ᵒ (_ , x⇒z , _) = x⇒y ≤ᵖ x⇒z
+(fsobj _ x⇒y _) ≤ᵒ (fsobj _ x⇒z _) = x⇒y ≤ᵖ x⇒z
 
-≤ᵒ-id : ∀ {fx} {obj : FSObj fx} → _≤ᵒ_ {fx} obj obj
-≤ᵒ-id = ≤ᵖ-id
+≤ᵒ-id : ∀ {fx} {obj₁ obj₂ : FSObj fx} → obj₁ ≡ᵒ obj₂ → obj₁ ≤ᵒ obj₂
+≤ᵒ-id {_} {fsobj _ _ _} {fsobj _ _ _} (refl , refl) = ≤ᵖ-id
 
 ≤ᵒ-trans : ∀ {fx} {obj₁ : FSObj fx} {obj₂ obj₃} →
-    _≤ᵒ_ {fx} obj₁ obj₂ → _≤ᵒ_ {fx} obj₂ obj₃ → _≤ᵒ_ {fx} obj₁ obj₃ 
-≤ᵒ-trans a b = ≤ᵖ-trans a b
+    obj₁ ≤ᵒ obj₂ → obj₂ ≤ᵒ obj₃ → obj₁ ≤ᵒ obj₃ 
+≤ᵒ-trans {_} {fsobj _ _ _} {fsobj _ _ _} {fsobj _ _ _}
+    a b = ≤ᵖ-trans a b
 
--- ischild
-iskid : ∀ {fx} → FSObj fx → FSObj fx → Set
-iskid (x , _) (y , _) = y ∈ᶜ x
+-- better definition for ischild
+ischild : ∀ {fx} → FSObj fx → FSObj fx → Set
+ischild (fsobj y x⇒y _) (fsobj z x⇒z _) = 
+    Σ[ z∈y ∈ z ∈ᶜ y ] x⇒z ≡ x⇒y +ᵖ tran z∈y self
 
-get-children : ∀ {fx} → (obj : FSObj fx) → isdir {fx} obj 
-    → List (Σ[ kid ∈ (FSObj fx) ] iskid {fx} obj kid)
-get-children {fx@(x , tx , _)} obj@(node ys , x⇒y , pv) node = map-∈ gen-∈
+ischild-≤ᵒ : ∀ {fx} {a b : FSObj fx} → ischild a b → a ≤ᵒ b
+ischild-≤ᵒ {_} {fsobj _ x⇒y _} {fsobj _ x⇒z _} (z∈y , pf) = ≤ᵖ-≡ ≤ᵖ-+ᵖ (sym pf)
+
+ischild-dir : ∀ {fx} {a b : FSObj fx} → ischild a b → IsDir a
+ischild-dir {_} {fsobj _ _ _} {fsobj _ _ _} (child _ , _ ) = node
+
+get-children : ∀ {fx} → (obj : FSObj fx) → IsDir obj 
+    → List (Σ[ kid ∈ (FSObj fx) ] ischild obj kid)
+get-children {fx} obj@(fsobj (node ys) x⇒y pv) node = map-∈ gen-∈
     where
+        x = shape fx
+        tx = froot fx
         ty = get x⇒y tx
         -- get the treelist associated with a node
         get-tl : ∀ {ys} → Tree (node ys) → TreeList ys
@@ -179,16 +244,15 @@ get-children {fx@(x , tx , _)} obj@(node ys , x⇒y , pv) node = map-∈ gen-∈
             (λ (x , x∈xs) → (x , there x∈xs)) (gen-∈ {ys})
         -- map the list of membership relations to children
         map-∈ : List (Σ[ x ∈ TreeShape ] x ∈ ys) 
-            → List (Σ[ kid ∈ (FSObj fx) ] iskid {fx} obj kid)
+            → List (Σ[ kid ∈ (FSObj fx) ] ischild obj kid)
         map-∈ [] = []
         map-∈ ((z , z∈ys) ∷ rest) with status (get-list z∈ys (get-tl ty)) in eq
-        ... | live = ((z , x⇒y +ᵖ tran (child z∈ys) self , 
+        ... | live = ((fsobj z (x⇒y +ᵖ tran (child z∈ys) self)
             (begin get-status (x⇒y +ᵖ tran (child z∈ys) self) tx 
             ≡⟨ cong status (get-+ᵖ x⇒y (tran (child z∈ys) self) tx) ⟩ 
             get-status (tran (child z∈ys) self) ty 
             ≡⟨ cong status (cong (get (tran (child z∈ys) self)) (guide ty)) ⟩
-            eq)), child z∈ys 
-            ) ∷ map-∈ rest
+            eq)) , child z∈ys , refl) ∷ map-∈ rest
             where
                 -- to guide the type system to see this simple fact...
                 guide : ∀ {ys} → (ty : Tree (node ys)) 
@@ -205,74 +269,81 @@ gp-help {x} (tran z∈ᶜx y⇒z) neg with y⇒z in eq
 ... | self = x , self , z∈ᶜx , refl
 ... | tran _ _ = let
             ts , path , kid , pf = gp-help y⇒z λ eqp → 
-                CONTRA (≡ᵖ-trans (≡ᵖ-sym (≡-≡ᵖ eq refl)) eqp)
+                p-contra (≡ᵖ-trans (≡ᵖ-sym (≡-≡ᵖ eq refl)) eqp)
         in ts , tran z∈ᶜx path , kid , 
             cong (tran z∈ᶜx) (trans (sym eq) pf)
-        where
-            CONTRA : ∀ {x y z a b} → tran {y} {x} {z} a b ≡ᵖ self → ⊥
-            CONTRA ()
 
 -- get parent
-get-parent : ∀ {fx} → (obj : FSObj fx) → ¬ (_≡ᵒ_ {fx} obj (root {fx})) 
-    → Σ[ par ∈ FSObj fx ] iskid {fx} par obj
-get-parent (x , self , eq) neq = ⊥-elim (neq (refl , refl))
-get-parent {x , tx , vx , lx} (_ , x⇒z@(tran _ _) , lz) neq = let
+get-parent : ∀ {fx} → (obj : FSObj fx) → ¬ (obj ≡ᵒ (root {fx})) 
+    → Σ[ par ∈ FSObj fx ] ischild par obj
+get-parent (fsobj x self eq) neq = ⊥-elim (neq (refl , refl))
+get-parent {fx} (fsobj _ x⇒z@(tran _ _) lz) neq = let
         y , x⇒y , z∈y , pf = gp-help x⇒z λ ()
+        tx = froot fx
+        vx = valid fx
     in
-        (y , x⇒y , 
-        ≤ˢ-max-eq (≡-≤ˢ (sym lz) 
-        (≡-≤ˢ (cong (λ x → get-status x tx) pf) (vx x⇒y (tran z∈y self))))) , 
-        z∈y
+        fsobj y x⇒y 
+        (≤ˢ-max-eq (≡-≤ˢ (sym lz) 
+        (≡-≤ˢ (cong (λ x → get-status x tx) pf)
+        (vx x⇒y (tran z∈y self))))) , 
+        (z∈y , pf)
 
-remObj : ∀ {fx} → (obj : FSObj fx) → ¬ (_≡ᵒ_ {fx} obj (root {fx})) → FS
-remObj (x , self , eq) neq = ⊥-elim (neq (refl , refl))
-remObj {x , tx@(node _ _) , vx , lx} (y , x⇒y@(tran (child _) _) , eq) neq = x , 
-    erase x⇒y tx , erase-V x⇒y tx vx , lx
+remObj : ∀ {fx} → (obj : FSObj fx) → ¬ (obj ≡ᵒ root) → FS
+remObj (fsobj x self eq) neq = ⊥-elim (neq (refl , refl))
+remObj {fs x tx@(node _ _) vx lx dx} (fsobj y x⇒y@(tran (child _) _) eq) neq = record { 
+        shape = x 
+    ;   froot = erase x⇒y tx 
+    ;   valid = erase-V x⇒y tx vx 
+    ;   isliv = lx 
+    ;   isdir = dx }
 
-rem-map : (fx : FS) → (objr : FSObj fx) → (nr : ¬ (_≡ᵒ_ {fx} objr (root {fx})))
-    → (objo : FSObj fx) → ¬ (_≤ᵒ_ {fx} objr objo)
-    → Σ[ objn ∈ FSObj (remObj {fx} objr nr) ] extract {fx} objo ≡ extract {remObj objr nr} objn
-rem-map (x , tx , vx , _) (x , self , eq) neq _ _ = ⊥-elim (neq (refl , refl))
-rem-map (x , tx@(node _ _) , _) (y , x⇒y@(tran (child _) _) , _) nr (a , x⇒a , la) nc 
-    = (a , x⇒a , trans (sym eq) la) , eq
+rem-map : ∀ {fx} → (objr : FSObj fx) → (nr : ¬ (objr ≡ᵒ root ))
+    → (objo : FSObj fx) → ¬ (objr ≤ᵒ objo)
+    → Σ[ objn ∈ FSObj (remObj objr nr) ] extract objo ≡ extract objn
+rem-map {fs x tx vx _ _} (fsobj x self eq) neq _ _ = ⊥-elim (neq (refl , refl))
+rem-map {fs x tx@(node _ _) _ _ _} (fsobj y x⇒y@(tran (child _) _) _) nr (fsobj a x⇒a la) nc 
+    = (fsobj a x⇒a (trans (sym eq) la)) , eq
     where
         eq = erase-other x⇒y x⇒a nc tx
 
-addFS : ∀ {fx} → (obj : FSObj fx) → isdir {fx} obj → FS → FS
-addFS {fx@(x , tx , vx , lx , nx)} (y , x⇒y , ly) node (a , fa , va , la) 
-    = add-shape (rootisdir {fx}) node x⇒y a , add x⇒y tx fa , add-V x⇒y vx va ly , 
-    trans (add-≡ (rootisdir {fx}) node tx fa x⇒y) lx , add-shape-N (rootisdir {fx}) node x⇒y 
+addFS : ∀ {fx} → (obj : FSObj fx) → IsDir obj → FS → FS
+addFS {fs x tx vx lx nx} (fsobj y x⇒y ly) node (fs a fa va la _) 
+    = fs (add-shape nx node x⇒y a) (add x⇒y tx fa) (add-V x⇒y vx va ly) 
+    (trans (add-≡ nx node tx fa x⇒y) lx) (add-shape-N nx node x⇒y) 
 
-add-map : ∀ {fx} → (objm : FSObj fx) → (idom : isdir {fx} objm) → (fa : FS)
-    → (objo : FSObj fx) → ¬ (_≤ᵒ_ {fx} objo objm)
-    → Σ[ objn ∈ FSObj (addFS {fx} objm idom fa) ] extract {fx} objo ≡ extract {addFS {fx} objm idom fa} objn
-add-map {fx@(x , tx , vx , _)} (y , x⇒y , ly) node (a , fa , va , _) (b , x⇒b , lb) nc = 
-    (b , as-↑ x⇒y x⇒b nc a , trans (sym eq) lb) , eq
+add-map : ∀ {fx} → (objm : FSObj fx) → (idom : IsDir objm)
+    → (objo : FSObj fx) → ¬ (objo ≤ᵒ objm) → (fa : FS)
+    → Σ[ objn ∈ FSObj (addFS objm idom fa) ] extract objo ≡ extract objn
+add-map {fs x tx vx _ nx} (fsobj y x⇒y ly) node (fsobj b x⇒b lb) nc (fs a fa va _ _) = 
+    fsobj b (as-↑ x⇒y x⇒b nc a) (trans (sym eq) lb) , eq
     where
-        eq = add-other {_} {_} {rootisdir {fx}} {node} x⇒y x⇒b nc tx fa ly
-```
+        eq = add-other {_} {_} {nx} {node} x⇒y x⇒b nc tx fa ly
 
-```agda
+isequi : ∀ {fx : FS} → IsEquivalence (_≡ᵒ_ {fx})
+isequi = record { refl = ≡ᵒ-id ; sym = ≡ᵒ-sym ; trans = ≡ᵒ-trans }
+
 _ : IsFS FS
-_ = record{ FSObj = FSObj
-    ; root = root -- a lot of yellow, maybe becasue of eta-equality?
+_ = record { FSObj = FSObj
+    ; root = root
     ; Info = Info
     ; _≡ᵒ_ = _≡ᵒ_
-    ; ≡ᵒ-trans = ≡ᵒ-trans
-    ; ≡ᵒ-sym = ≡ᵒ-sym
-    ; IsDir = isdir
-    ; RootIsDir = rootisdir
+    ; IsDir = IsDir
+    ; RootIsDir = λ fx → rootisdir {fx} 
     ; extract = extract
     ; _≤ᵒ_ = _≤ᵒ_
-    ; ≤ᵒ-id = ≤ᵒ-id
-    ; ≤ᵒ-trans = ≤ᵒ-trans
-    ; IsChild = iskid
+    ; IsChild = ischild
     ; get-children = get-children
     ; get-parent = get-parent
     ; remObj = remObj
-    ; rem-map = {! rem-map  !}
+    ; rem-map = rem-map
     ; addFS = addFS
     ; add-map = add-map
+    ; ≡ᵒ-prop = record { refl = ≡ᵒ-id ; sym = ≡ᵒ-sym ; trans = ≡ᵒ-trans }
+    ; ≤ᵒ-prop = record { isEquivalence = isequi ; reflexive = ≤ᵒ-id ; trans = ≤ᵒ-trans }
+    ; IsChild-≤ᵒ = ischild-≤ᵒ
+    ; IsChild-IsDir = ischild-dir
+    ; _≡ᵒ?_ = _≡ᵒ?_
+    ; IsDir? = IsDir?
     }
 ```
  
