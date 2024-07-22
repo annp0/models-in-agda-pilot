@@ -2,7 +2,7 @@
 open import Data.List using (List; []; _∷_)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; _≢_; refl; trans; sym; cong)
-open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
+open Eq.≡-Reasoning -- just get everything from here
 open import Relation.Nullary using (¬_; Dec; yes; no)
 open import Data.Empty using (⊥; ⊥-elim)
 open import Data.Nat using (ℕ; zero; suc)
@@ -444,6 +444,7 @@ erase-other (tran (child a∈xs) a⇒y) (tran (child b∈xs) b⇒z) n (node s tx
         a = get-list a∈xs txs
 ... | no neq = cong (λ x → get-status b⇒z x) 
         (al-other neq ((erase a⇒y (get-list a∈xs txs))) txs)
+
 ```
 
 For the `add` operation, we need some more help functions.

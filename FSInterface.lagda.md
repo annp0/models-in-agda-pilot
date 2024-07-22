@@ -6,11 +6,10 @@ open import Data.Maybe using (Maybe; just; nothing)
 open import Data.List using (List; []; _∷_; map)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_; _≢_; refl; trans; sym; cong)
-open Eq.≡-Reasoning using (begin_; _≡⟨⟩_; step-≡; _∎)
+open Eq.≡-Reasoning -- everything
 open import Data.Empty using (⊥; ⊥-elim)
 open import Relation.Nullary using (¬_; Dec; yes; no)
-open import Relation.Nullary.Negation using (¬?)
-open import Relation.Nullary.Product using (_×-dec_)
+open import Relation.Nullary.Decidable using (¬?; _×-dec_)
 open import Relation.Binary.Structures using (IsEquivalence; IsPreorder)
 open import Tree using (Tree; TreeList; []; _∷_; TreeShape;
     V; L′; _⇒_; get; V-∀; N; node; _∈_; here; there; status;
