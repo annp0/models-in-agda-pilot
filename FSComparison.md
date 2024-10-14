@@ -1,6 +1,6 @@
 ## Model Description
 
-A file system is a structured method for organizing, storing, and managing files on storage devices such as hard drives, SSDs, and USB drives.
+A file system is a structured method for organizing, storing, and managing files on storage devices such as hard drives, SSDs, and USB drives. [1](https://en.wikipedia.org/wiki/File_system)
 
 ### Key Components of a File System
 
@@ -22,52 +22,182 @@ A file system is a structured method for organizing, storing, and managing files
 
 From the above descriptions, we infer:
 
-- A file system comprises two types of objects: files and directories.
-- The hierarchical nature implies a tree structure with the following properties:
-    - A unique root exists, which is not a member of any directory.
-    - If object A is a member of directory B, then B is the parent of A.
-    - Any non-root object should have a queryable parent.
-    - Directory objects should allow queries for their child objects.
-- Files and directories can be added to or removed from the file system. These operations must satisfy the following properties:
-    - Operations only affect the targeted objects.
-    - Adding an object will indeed add an object; removing an object will indeed remove an object.
+- 1. A file system comprises two types of objects: files and directories. There is only a finite number of objects in a file system.
+- 2. By the specifications, for each file, we should be able to know its parent; for each directory, we should be able to know its parent and children. This implies:
+    - 2a. A unique root exists and is not a member of any directory, since otherwise keep taking parent function on a object can be non-converging, which implies either there is infinitely many objects or there is a loop. Both cases contradicts our specification. Since it is unique, being root or non-root has to be a decidable property.
+    - 2b. If object A is a member of directory B, then B is the parent of A.
+    - 2c. There is always a parent for any non-root object.
+    - 2d. For every directory, we can always query its children. 
+- 3. Files and directories can be added to or removed from the file system. These operations must satisfy the following properties:
+    - 3a. Operations only affect the targeted objects.
+    - 3b. They have localized side effects.
+- 4. There is a function that takes an object and extracts its information, which could include their contents and metadata.
 
 Our model is expected to satisfy these specifications and properties.
 
 ### Features and Characteristics
 
-According to [1](https://inria.hal.science/inria-00538459/document), a good model should have the following features:
+[2](https://inria.hal.science/inria-00538459/document) has identified the following features & characteristics that a good model should follow:
 
-- **Mapping Feature**: The model is based on common understandings of file systems as described by Wikipedia and other sources.
+Features:
+- **Mapping Feature**: A model is based on an original.
+- **Reduction Feature**: A model only refecls a relevant selection of an original's properties.
+- **Pragmatic Feature**: A model needs to be usable in place of an original with respect to some purpose.
+
+Characteristics:
+- **Abstraction**: A model is always a reduced rendering of the system that it
+represents.
+- **Understandability**: A model must remain in a form that directly appeals to our intuition.
+- **Accuracy**: A model must provide a true-to-life representation of the modeled system's features of interest.
+- **Predictiveness**: A model must correctly predict the interesting but non-onbious properties of the modeled system.
+- **Inexpensiveness**: A model must be significantly cheaper to construct and
+analyse than the modeled system.
+
+We check our model against those points. As for features:
+
+- **Mapping Feature**: The model is based on common understandings of file systems as described by Wikipedia and other sources, which is our original. 
 - **Reduction Feature**: We have abstracted away certain elements from the original description:
-    - **Pathnames**: Existing file systems usually seperate the notion of files / directories themselves and their pathnames. We find this to be unnecessary: pathnames are used as unique indentifiers, but when we talk about different objects in a modelling language, we are already indentifying them in some way.
+    - **Pathnames**: Existing file systems usually seperate the notion of files / directories themselves and their pathnames. We find this to be unnecessary: pathnames are used as unique indentifiers, but when we talk about different objects in a modeling language, we are already indentifying them in some way. Therefore we didn't explicitly define path names in our model.
     - **Metadata**: We can just include them as the information contained in files / directories.
-    - **Storage Allocation**: This aspect is ignored since the physical storage details are not the focus of our model.
-- **Pragmatic Feature**: The model retains the essential features of a file system.
+    - **Storage Allocation etc.**: This aspect is ignored since the physical storage details are not the focus of our model.
+- **Pragmatic Feature**: The model retains the essential features of a file system: the APIs of our model have given ways to extract the information in files, provide all access to the file system structure, and to modify the system by adding / removing objects. This can be use in place of the original.
 
-### Characteristics
+As for characteristics:
 
-- **Abstraction**: Non-essential details are omitted, and the core aspects of a file system are preserved.
-- **Understandability/Accuracy**: The model remains both comprehensible and accurate after abstraction.
-- **Predictiveness**: The model specifies key properties that are crucial for a predictable file system.
+- **Abstraction**: By the reduction feature and pragmatic feature, we can conclude that our model has abstracted away certain elements from the original description while preserving its essential features.
+- **Understandability**: The model appeals to our intuition by using the tree hierarchey. We excluded the approach of modeling file systems as graphs and so on because they are less intuitive.
+- **Accuracy**: Compared to real world file systems (e.g., NTFS, ext4), the model is accurate from the following perspectives:
+    - Each non-root object has a single parent, and directories can have multiple children.
+    - The root is unique, and it is decidable.
+    - Every file or directory, except the root, must be contained within a directory, and directories can hold multiple items.
+- **Predictiveness**: The model specifies properties that are crucial for a predictable file system, for example:
+    - Parent-Child consistency.
+    - Operations only have localized and predictable effects: the model ensures that operations such as adding or removing files or directories only affect the targeted objects and their immediate relationships.
 - **Inexpensiveness**: Implementing this model in a modeling language is significantly simpler than developing a real file system since detailed aspects like metadata and storage allocation are not considered.
 
 ## Our Agda Model
 
-In our Agda model, a file system is represented as a record containing the following components:
+In this section, we walk through the process that leads to the concrete model we have in agda.
 
-- **`FSObj`**: The type representing file system objects.
-- **`root`**: The root object among the file system objects.
-- **`Info`**: The type of information associated with files.
-- **`≡ᵒ`**: An equality relation between objects; we need this mainly because when querying an object's parents, we need to express that object is not root (this equality is usually established by comparing pathnames).
-- **`IsDir`**: A predicate identifying directory objects.
-- **`≤ᵒ`**: A preorder relation expressing containment.
-- **`IsChild`**: A relation indicating membership within a directory.
-- **`get-children`**: A function that retrieves all children of a given directory, along with proof of their child status.
-- **`get-parent`**: A function that retrieves the parent of an object, provided the object is not the root, along with proof of its child status.
-- **`remObj`**: A function that removes an object and returns the updated file system.
-- **`rem-map`**: A proof that for objects unaffected by removal, there is a mapping to the new file system where their information remains unchanged.
-- **`addFS` and `add-map`**: Functions similar to `remObj` and `rem-map`, but for adding objects.
+### Basic setup
+
+First of all, a file system is a record that contains APIs:
+
+```agda
+record IsFS (A : Set) : Set₁ where
+```
+
+we say type `A` is a file system if we can form `IsFs A`. 
+
+It is clear that we need to define objects, root and information. Our approach first defines the type of objects and information:
+
+```agda
+FSObj : A → Set
+Info: Set
+```
+
+since root is just an object:
+
+```agda
+root : ∀ {a : A} → FSObj a
+```
+
+According to the model, `root` should be decidable. However, to say whether an object **is** root or not requires the notion of equality, which needs to be decidable as well.
+
+```agda
+_≡ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
+-- it is an equivalence relation 
+≡ᵒ-prop : ∀ {a} → IsEquivalence (_≡ᵒ_ {a})
+-- it is decidable
+_≡ᵒ?_ : ∀ {a} (obj₁ obj₂ : FSObj a) → Dec (obj₁ ≡ᵒ obj₂) 
+```
+
+with that we can say `root` is decidable:
+
+```agda
+-- define 'an object is not root'
+IsNotRoot : ∀ {a} → FSObj a → Set
+IsNotRoot obj = ¬ (obj ≡ᵒ root)
+-- this property is decidable
+IsNotRoot? : ∀ {a} (obj : FSObj a) → Dec (IsNotRoot obj)
+IsNotRoot? obj = ¬? (obj ≡ᵒ? root)
+```
+
+At last, we can extract information from an object:
+
+```agda
+extract : ∀ {a} → FSObj a → Info
+```
+
+### Hierarchey structure
+
+As previously stated, the tree-like hierarchey structure is the key to our model. We first define directories and files. We approach this by defining `IsDir` as a predicate, and the objects that can form that predicate are directories, otherwise they are files. This obviously requires `IsDir` to be decidable.
+
+```agda
+IsDir : ∀ {a} → FSObj a → Set
+IsDir? : ∀ {a} → (obj : FSObj a) → Dec (IsDir obj)
+-- also, root should be a dir
+RootIsDir : ∀ (a : A) → IsDir
+```
+
+We need to define the child relation: `IsChild par kid` says `kid` is a child of `par`. Obviously `par` should be a directory, and for every directory we can query their children (with proof that they are indeed children).
+
+```agda
+IsChild : ∀ {a} → FSObj a → FSObj a → Set
+IsChild-IsDir : ∀ {a} {par kid : FSObj a} → IsChild par kid → IsDir par
+get-children : ∀ {a} → (obj : FSObj a) → IsDir obj 
+            → List (Σ[ kid ∈ (FSObj a) ] IsChild obj kid)
+```
+
+Also, for any non-root object, we should also be able to query its parent.
+
+```agda
+get-parent : ∀ {a} → (obj : FSObj a) → IsNotRoot obj
+    → Σ[ par ∈ (FSObj a) ] IsChild par obj
+```
+
+with this, we have set up the tree structure.
+
+### Operations, and their effects
+
+Given an object of `A`, if it is not the root, then it can be removed:
+
+```agda
+remObj : ∀ {a} → (obj : FSObj a) → IsNotRoot obj → A
+```
+
+Given another tree structure, given a directory, we can also add that tree structure to our file system:
+
+```agda
+addFS : ∀ {a} → (obj : FSObj a) → IsDir obj → A → A
+```
+
+Now we model their effects: they should only affect the subtree rooted at the specified location. Therefore we need the notion of `subtree`, or more precisely `containment`. We say `o1` is contained in `o2` if we can reach `o1` starting from `o2`. This relation is obviously a preorder.
+
+```agda
+_≤ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
+≤ᵒ-prop : ∀ {a} → IsPreorder (_≡ᵒ_ {a}) (_≤ᵒ_ {a}) 
+```
+
+we also define their negation for convenience:
+
+```agda
+_≰ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set
+_≰ᵒ_ obj₁ obj₂ = ¬ (obj₁ ≤ᵒ obj₂)
+```
+
+The effect can then be stated as follows, i.e. if the object is not contained in the location subject to the operation, this function maps the object to an object in the new file system that contains the same information.
+
+```agda
+rem-map : ∀ {a} → (objr : FSObj a) → (nr : IsNotRoot objr) → (objo : FSObj a)
+    → objr ≰ᵒ objo
+    → Σ[ objn ∈ FSObj (remObj objr nr) ] extract objo ≡ extract objn
+add-map : ∀ {a} → (objm : FSObj a) → (idom : IsDir objm) 
+    → (objo : FSObj a) → objo ≰ᵒ objm → (b : A)
+    → Σ[ objn ∈ FSObj (addFS objm idom b) ] extract objo ≡ extract objn
+```
+
+### Conclusion
 
 This model is clearly a type theory model. As noted in [2](https://www.cse.chalmers.se/~patrikj/papers/TypeTheory4ModProg_preprint_2018-05-19.pdf), type theory models satisfy typical modeling needs, and our model confirms this:
 
@@ -80,24 +210,47 @@ However, we identified several limitations:
 - **Visualization**: There is no straightforward way to visualize a type theory model.
 - **Automated Reasoning**: Proofs for every property must be manually provided, which is time-consuming and challenging. Automated reasoning would be beneficial, but Agda does not support even proving basic results automatically.
 
-## Comparison with Alloy
-We now compare our model with the alloy file system model presented at [3](https://alloytools.org/tutorials/online/frame-FS-1.html). The alloy model models file systems as follows:
+## The Alloy Model
 
-- We first define `file`, `directory` as signatures, and they are both file system objects;
+We introduce the alloy file system model presented at [3](https://alloytools.org/tutorials/online/frame-FS-1.html).
 
-- We then define file system:
-    - it contains a set of file system objects (`live`)
-    - there is a root that is a directory, and is `live`
-    - `parent` is a relation that connects anything that is not root to some directory that is live
-    - `contents` connects a directory with multiple file system objects
-    - live objects are reachable from root (by keep taking `contents`)
-    - `parent` is the inverse of `contents`
+### Basic setup
+
+For basic setup, we first define `file`, `directory` as signatures, and they are both file system objects.
+
+```
+abstract sig FSObject { }
+sig File, Dir extends FSObject { }
+```
+
+Next we define file system objects. Since Alloy is relational, translation from the specification to the actual code is easy:
+
+```
+sig FileSystem {
+// a fs contains a set of live objects
+  live: set FSObject,
+// the root is a directory and live (and unique)
+  root: Dir & live,
+// for each live object other than root, there is one directory associated with
+// them (the parent)
+  parent: (live - root) ->one (Dir & live),
+// for each directory, we can query their children
+  contents: Dir -> FSObject
+}{
+// live objects are reachable from the root
+  live in root.*contents
+// parent is the inverse of contents
+  parent = ~contents
+}
+```
 
 - And we check for the following properties:
     - If we `remove` an object, then we remove the parent relation from that file to its parent
     - The same goes for `move`
 
-It is different from our model in the following ways:
+## Comparison with Alloy
+
+We now compare our model with the alloy model. 
 
 - Implementation of "objects":
 	- Agda: "objects" are represented by data types. The distinction between files and directories is given by a predicate.
