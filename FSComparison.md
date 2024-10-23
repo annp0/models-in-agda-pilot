@@ -223,30 +223,70 @@ abstract sig FSObject { }
 sig File, Dir extends FSObject { }
 ```
 
-Next we define file system objects. Since Alloy is relational, translation from the specification to the actual code is easy:
+Next we define file systems:
 
 ```
 sig FileSystem {
-// a fs contains a set of live objects
+```
+
+First, it should contain a set of live objects:
+
+```
   live: set FSObject,
-// the root is a directory and live (and unique)
+```
+
+according to our specification, there is a root, and should be a unique directory that is live:
+
+```
   root: Dir & live,
-// for each live object other than root, there is one directory associated with
-// them (the parent)
+```
+
+for each live object other than root, there is one directory associated with them (the parent)
+
+```
   parent: (live - root) ->one (Dir & live),
-// for each directory, we can query their children
+```
+
+and for each directory, they are associated with a list of other objects
+
+```
   contents: Dir -> FSObject
 }{
-// live objects are reachable from the root
+```
+
+Children-parent consistency
+
+```
+parent = ~contents
+```
+
+since Alloy is relational, we need to relate the live objects with root by specifying
+a live object can always be reached from the root
+
+```
   live in root.*contents
-// parent is the inverse of contents
-  parent = ~contents
 }
 ```
 
-- And we check for the following properties:
-    - If we `remove` an object, then we remove the parent relation from that file to its parent
-    - The same goes for `move`
+### Operations
+
+For adding x to directory d, we first add x to the live objects, and then add the link `x->d` to the parent relations. 
+
+```
+pred move [fs, fs': FileSystem, x: FSObject, d: Dir] {
+  (x + d) in fs.live
+  fs'.parent = fs.parent + x->d
+}
+```
+
+For removing x from d, we first check if x is really in the fs, and then we remove the relation between x and its parent.
+
+```
+pred remove [fs, fs': FileSystem, x: FSObject] {
+  x in (fs.live - fs.root)
+  fs'.parent = fs.parent - x->(x.(fs.parent))
+}
+```
 
 ## Comparison with Alloy
 
