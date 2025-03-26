@@ -1,6 +1,6 @@
-## Model Description
+## Abstract Model
 
-A file system is a structured method for organizing, storing, and managing files on storage devices such as hard drives, SSDs, and USB drives. [1](https://en.wikipedia.org/wiki/File_system)
+A file system is a structured method for organizing, storing, and managing files on storage devices such as hard drives, SSDs, and USB drives. 
 
 ### Key Components of a File System
 
@@ -20,7 +20,13 @@ A file system is a structured method for organizing, storing, and managing files
 
 ## The Model
 
-From the above descriptions, we infer:
+From the above descriptions, in short, we want our model to have three things:
+
+- 1. Basic Structure (Objects, Directories, Containment)
+- 2. Operations (Adding, Moving, Deleting Objects)
+- 3. Guarantees (Ensuring correctness of operations)
+
+We can naturally expand those requirements to those:
 
 - 1. A file system comprises two types of objects: files and directories. There is only a finite number of objects in a file system.
 - 2. By the specifications, for each file, we should be able to know its parent; for each directory, we should be able to know its parent and children. This implies:
@@ -158,7 +164,7 @@ get-parent : ∀ {a} → (obj : FSObj a) → IsNotRoot obj
 
 with this, we have set up the tree structure.
 
-### Operations, and their effects
+### Operations
 
 Given an object of `A`, if it is not the root, then it can be removed:
 
@@ -171,6 +177,8 @@ Given another tree structure, given a directory, we can also add that tree struc
 ```agda
 addFS : ∀ {a} → (obj : FSObj a) → IsDir obj → A → A
 ```
+
+### Gurantees (Side Effects)
 
 Now we model their effects: they should only affect the subtree rooted at the specified location. Therefore we need the notion of `subtree`, or more precisely `containment`. We say `o1` is contained in `o2` if we can reach `o1` starting from `o2`. This relation is obviously a preorder.
 
@@ -214,102 +222,188 @@ However, we identified several limitations:
 
 We introduce the alloy file system model presented at [3](https://alloytools.org/tutorials/online/frame-FS-1.html).
 
-### Basic setup
+### Basic Setup
 
-For basic setup, we first define `file`, `directory` as signatures, and they are both file system objects.
-
-```
+```alloy
 abstract sig FSObject { }
 sig File, Dir extends FSObject { }
 ```
+- `FSObject`: Represents an **abstract** entity (either a file or directory).  
+- `File`, `Dir`: Extend `FSObject` into concrete types.  
 
-Next we define file systems:
-
-```
+```alloy
 sig FileSystem {
-```
-
-First, it should contain a set of live objects:
-
-```
   live: set FSObject,
-```
-
-according to our specification, there is a root, and should be a unique directory that is live:
-
-```
   root: Dir & live,
-```
-
-for each live object other than root, there is one directory associated with them (the parent)
-
-```
   parent: (live - root) ->one (Dir & live),
-```
-
-and for each directory, they are associated with a list of other objects
-
-```
   contents: Dir -> FSObject
-}{
-```
-
-Children-parent consistency
-
-```
-parent = ~contents
-```
-
-since Alloy is relational, we need to relate the live objects with root by specifying
-a live object can always be reached from the root
-
-```
-  live in root.*contents
 }
 ```
+- `live`: Tracks all existing objects.  
+- `root`: The single root directory.  
+- `parent`: Establishes a parent-child hierarchy.  
+- `contents`: Defines directory containment.  
 
-### Operations
+### Operations 
 
-For adding x to directory d, we first add x to the live objects, and then add the link `x->d` to the parent relations. 
+- Adding Objects:
 
-```
-pred move [fs, fs': FileSystem, x: FSObject, d: Dir] {
-  (x + d) in fs.live
-  fs'.parent = fs.parent + x->d
+```alloy
+pred add [fs, fs': FileSystem, newObj: FSObject, targetDir: Dir] {
+  targetDir in fs.live
+  newObj not in fs.live
+  
+  // Preserve existing structure except for the modification
+  fs'.live = fs.live + newObj
+  fs'.parent = fs.parent + newObj->targetDir
+  fs'.contents = fs.contents ++ targetDir->newObj
 }
 ```
+- Objects be added if they were not in the FS.  
+- The parent relationship is updated accordingly.  
 
-For removing x from d, we first check if x is really in the fs, and then we remove the relation between x and its parent.
+- Deleting Objects:
 
-```
+```alloy
 pred remove [fs, fs': FileSystem, x: FSObject] {
   x in (fs.live - fs.root)
   fs'.parent = fs.parent - x->(x.(fs.parent))
 }
 ```
+- Objects (except root) can be deleted.  
+- The parent relationship is removed.  
 
-## Comparison with Alloy
+### Guarantees (Correctness)
 
-We now compare our model with the alloy model. 
+```alloy
+removeOkay: check {
+  all fs, fs': FileSystem, x: FSObject |
+    remove[fs, fs', x] => fs'.live = fs.live - x
+} for 5
+```
+- Checks that Deleting removes exactly one object.  It's similar for add.
 
-- Implementation of "objects":
-	- Agda: "objects" are represented by data types. The distinction between files and directories is given by a predicate.
-	- Alloy: "objects" are represented by "signatures"
-- To express equality:
-	- Agda: We first define equality explicitly (since this equality is different from definitional equality).
-	- Alloy: Equality is established naturally, since objects are just atoms.
-- To express conditions on the domain:
-	- Agda: We write `(a : A) -> P a -> ...` to express this function is only defined over `(a : A)` with property `P a`.
-	- Alloy: We just write `(A - B) -> ...` to express this function is not defined on the intersection of A and B
-- Implementation of operations:
-	- Agda: Operations are defined as functions.
-	- Alloy: Operations are defined as predicates and they serve as restrictions to the SAT solver.
-- Implementation of properties:
-	- Agda: Properties are usually expressed in dependent types. 
-	- Alloy: Properties are expressed in terms of restrictions over relations and boolean-valued predicates.
-- To show there exists a model that satisfies our specifications:
-	- Agda: We show the type `ISFS` is inhabited. We designed a tree model to support this interface. The process from having an interface to showing there exists such a model is nontrivial, and after this process we are sure that our specification can be satisfied for any scope. However, there are no quick ways to check if our specifications contradict themselves.
-	- Alloy: We just run the SAT solver given a finite range. This allows us to quickly check the satisfiability for basic cases and generate counter examples for us to fix our specification if something was wrong. However, this method does not guarantee the absence of counterexamples in all scopes.
+## Comparison between the Alloy Model and our Agda model
+
+### Basic Structure
+
+The abstract model defines a file system as a collection of objects organized in a hierarchy.  
+
+#### Agda Model
+
+Agda captures this hierarchy using a record type (`IsFS`), which formalizes: 
+
+- Objects (`FSObj`)  
+- Root Directory (`root`)  
+- Containment Relations (`≤ᵒ`)  
+
+```agda
+record IsFS (A : Set) : Set₁ where
+    field
+        FSObj : A → Set  -- Defines objects in the FS
+        root : ∀ {a} → FSObj a  -- Unique root directory
+        _≤ᵒ_ : ∀ {a} → FSObj a → FSObj a → Set  -- Containment relation
+```
+- `FSObj` corresponds to the abstract notion of a file system object.  
+- `root` enforces the requirement that there is a unique entry point.  
+- `_≤ᵒ_` ensures a well-defined hierarchy, where objects are contained within directories.  
+
+#### Alloy Model
+
+Alloy defines similar concepts using signatures and relations:
+
+```alloy
+abstract sig FSObject { }
+sig File, Dir extends FSObject { }
+```
+- `FSObject` corresponds to `FSObj` in Agda.  
+- `File` and `Dir` extend `FSObject`, just as Agda could define `IsFile` and `IsDir`.  
+
+The root directory is explicitly declared:  
+
+```alloy
+sig FileSystem {
+  root: Dir & live
+}
+```
+This matches `root` in Agda.  
+
+### Operations
+
+The abstract model defines operations that modify the file system:  
+- Adding an object  
+- Removing an object
+
+#### Adding Objects
+
+In Agda, it is implemented as a field for a function:
+
+```
+addFS : ∀ {a} → (obj : FSObj a) → IsDir obj → A → A
+```
+
+The constraints are given as a term of certain type, and we do not need to implement this function immediately - however, to show such model exists, we eventually need to supply an example of `A` and `addFS`. 
+
+In Alloy it is as follows:
+
+```
+pred add [fs, fs': FileSystem, newObj: FSObject, targetDir: Dir] {
+  targetDir in fs.live
+  newObj not in fs.live
+  
+  // Preserve existing structure except for the modification
+  fs'.live = fs.live + newObj
+  fs'.parent = fs.parent + newObj->targetDir
+  fs'.contents = fs.contents ++ targetDir->newObj
+}
+```
+
+This directly manipulates the set of relations.
+
+For deletion operations, it is similar.
+
+### Guarantees  
+
+The abstract model ensures that operations preserves structure (i.e. only have local side effects).
+
+In Agda, this is done by another field that asks for a function that will return a term of the desired type.
+
+```agda
+add-map : ∀ {a} → (objm : FSObj a) → (idom : IsDir objm) 
+    → (objo : FSObj a) → objo ≰ᵒ objm → (b : A)
+    → Σ[ objn ∈ FSObj (addFS objm idom b) ] extract objo ≡ extract objn
+```
+
+In Alloy, since the constraints are already in the definition, we can directly run the predicate to check behavior:
+
+```
+run addFS for 2 FileSystem, 5 FSObject
+```
+
+### Conclusion
+
+From the modeling standpoint:
+
+| Feature | Abstract Model | Agda Model | Alloy Model |
+|---------|---------------|------------|-------------|
+| Objects | Files, Directories | `FSObj` data type | `sig FSObject` |
+| Parent-Child Relationship | Defined explicitly | `IsChild` predicate | `contents` and `parent` relations |
+| Root | Unique, no parent | `root : FSObj a` | `root: Dir & live` |
+| Operations | Add, Remove | `addFS`, `remObj` | `add`, `remove` |
+| Hierarchy Enforcement | Explicitly stated | `IsDir`, `IsChild` | `parent = ~contents` |
+| Localized Effects | Enforced | `rem-map`, `add-map` | `fs'.live = fs.live - x`, etc. |
+| Verification | Manual proof | Dependent types ensure correctness | SAT solver generates counterexamples |
+
+In terms of language features:
+
+| **Aspect**                               | **Agda**                                                            | **Alloy**                                                   |
+|------------------------------------------|---------------------------------------------------------------------|-------------------------------------------------------------|
+| **Implementation of "objects"**          | "Objects" are represented by data types. The distinction between files and directories is given by a predicate. | "Objects" are represented by "signatures".                |
+| **To express equality**                  | We first define equality explicitly (since this equality is different from definitional equality). | Equality is established naturally, since objects are just atoms. |
+| **To express conditions on the domain**  | We write `(a : A) -> P a -> ...` to express this function is only defined over `(a : A)` with property `P a`. | We just write `(A - B) -> ...` to express this function is not defined on the intersection of A and B. |
+| **Implementation of operations**         | Operations are defined as functions.                                | Operations are defined as predicates and they serve as restrictions to the SAT solver. |
+| **Implementation of properties**         | Properties are usually expressed in dependent types.                 | Properties are expressed in terms of restrictions over relations and boolean-valued predicates. |
+| **To show there exists a model that satisfies our specifications** | We show the type `ISFS` is inhabited. We designed a tree model to support this interface. The process from having an interface to showing there exists such a model is nontrivial, and after this process we are sure that our specification can be satisfied for any scope. However, there are no quick ways to check if our specifications contradict themselves. | We just run the SAT solver given a finite range. This allows us to quickly check the satisfiability for basic cases and generate counterexamples for us to fix our specification if something was wrong. However, this method does not guarantee the absence of counterexamples in all scopes. |
 
 ## Reasons
 
