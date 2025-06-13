@@ -1,6 +1,6 @@
 ## Abstract Model
 
-A file system is a structured method for organizing, storing, and managing files on storage devices such as hard drives, SSDs, and USB drives. 
+A file system is a structured method for organizing, storing, and managing files on storage devices such as hard drives, SSDs, and USB drives. [1](https://en.wikipedia.org/wiki/File_system)
 
 ### Key Components of a File System
 
@@ -380,7 +380,7 @@ In Alloy, since the constraints are already in the definition, we can directly r
 run addFS for 2 FileSystem, 5 FSObject
 ```
 
-### Conclusion
+### Conclusion of Comparison
 
 From the modeling standpoint:
 
@@ -405,10 +405,45 @@ In terms of language features:
 | **Implementation of properties**         | Properties are usually expressed in dependent types.                 | Properties are expressed in terms of restrictions over relations and boolean-valued predicates. |
 | **To show there exists a model that satisfies our specifications** | We show the type `ISFS` is inhabited. We designed a tree model to support this interface. The process from having an interface to showing there exists such a model is nontrivial, and after this process we are sure that our specification can be satisfied for any scope. However, there are no quick ways to check if our specifications contradict themselves. | We just run the SAT solver given a finite range. This allows us to quickly check the satisfiability for basic cases and generate counterexamples for us to fix our specification if something was wrong. However, this method does not guarantee the absence of counterexamples in all scopes. |
 
-## Reasons
+### Analysis of Key Design Choices
+
+Both models made important design choices that weren't strictly forced by the requirements:
+
+#### The 'live' Concept in Alloy
+
+The Alloy model introduces a 'live' set that tracks existing objects, which isn't explicitly mentioned in the requirements or implemented in the Agda model:
+
+```alloy
+sig FileSystem {
+  live: set FSObject,
+  ...
+}
+```
+
+This design choice stems from Alloy's relational approach:
+
+1. Alloy needs an explicit mechanism to differentiate between potential objects in the universe and those currently existing in the file system
+2. The 'live' set provides a natural boundary for operations - `add` brings objects into this set, and `remove` takes them out
+3. 'live' also serves as a state-tracking mechanism
+
+The Agda model achieves the same goal differently through its parameterization of file systems by the collection of objects (`FSObj : A → Set`). When operations like `addFS` or `remObj` create new file system states, objects are intrinsically tied to specific file systems, eliminating the need for explicit "liveness" tracking.
+
+#### Data Types vs. Signatures
+
+The choice of using parameterized data types in Agda versus signatures in Alloy reflects their different foundations:
+
+Agda:
+- Modeling objects as a family of types indexed by file system state (`FSObj : A → Set`) is a natural choice from Agda's functional programming design
+- This naturally establishes signatures as claims and implementations as proofs by the Curry-Howard correspondence.
+- Using predicates rather than "classes" allows more flexible reasoning about object properties
+
+Alloy:
+- Alloy's relational logic makes signatures (representing sets of atoms) the natural modeling primitive
+- The inheritance relationship `sig File, Dir extends FSObject` directly mirrors the conceptual "is-a" relationship
+- This also allows Alloy's analyzer to directly visualize these atom-based objects and their relationships
+
+### Summary
 
 - Expressing models is relatively easy in Alloy because models are built on relations between atoms. It is very easy to restrict the domain and relations with set-theory language.
 
 - In Agda things are less straightforward because we usually describe file systems with set-theoric language, and agda is based on type theory. Translating the notion of objects, parent, etc. to data types requires nontivial thinking.
-
-Finally, the choice between Agda and Alloy depends on the specific needs of the modeling task -- whether one prioritizes expressive power and formal proofs (Agda) or ease of use and quick counterexample generation (Alloy).
