@@ -228,9 +228,10 @@ add-map : ∀ {a} → (objm : FSObj a) → (idom : IsDir objm)
 | ------------------------------------- | ---------------------------------------------------------- |
 | 1–2 Objects, root                     | `FSObj`, `root`, `_≡ᵒ?_`, `IsNotRoot?`                     |
 | 3 Parent–child hierarchy              | `IsChild`, `get-parent`, `get-children`, `_≤ᵒ_`, `≤ᵒ-prop` |
-| 4 Metadata / Information              | `Info`, `extract`                                          |
+| 4/6 Metadata / Information              | `Info`, `extract`                                          |
 | 5 Directory predicate                 | `IsDir`, `IsDir?`, `RootIsDir`                             |
-| 6–8 Add/Remove/Move                   | `addFS`, `remObj`                                          |
+| 7 Navigating the hierarchy    | `get-parent`, `get-children`   |
+| 8 Add/Remove       | `addFS` `remObj` |
 | 9-10 Localized Effects / Consistency | `add-map`, `rem-map`, `_≰ᵒ_`                               |
 
 
