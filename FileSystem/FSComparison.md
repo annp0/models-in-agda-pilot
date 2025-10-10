@@ -30,7 +30,7 @@ A file system is a structured method for organizing, storing, and managing files
 
 From the textbook view (Silberschatz et al., *Operating System Concepts*, 9th ed., Ch. 11), a file system can be abstracted by three interlocking parts:
 
-* **Basic Structure**: the static shape of objects, directories, and their containment relation.
+* **Basic Structure**: the shape of objects, directories, and their containment relation.
 * **Operations**: adding, moving, and deleting objects.
 * **Guarantees**: correctness and localized side effects of those operations.
 
