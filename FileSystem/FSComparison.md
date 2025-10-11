@@ -31,7 +31,7 @@ A file system is a structured method for organizing, storing, and managing files
 From the textbook view (Silberschatz et al., *Operating System Concepts*, 9th ed., Ch. 11), a file system can be abstracted by three interlocking parts:
 
 * **Basic Structure**: the shape of objects, directories, and their containment relation.
-* **Operations**: adding, moving, and deleting objects.
+* **Operations**: adding, moving, deleting objects, and changing their info (metadata, content, etc.).
 * **Guarantees**: correctness and localized side effects of those operations.
 
 This section specifies what our abstract model of a file system must satisfy before any implementation.
@@ -39,7 +39,13 @@ This section specifies what our abstract model of a file system must satisfy bef
 ### Basic Structure
 
 1. **Objects (Files and Directories).**
-  The file system consists of a finite set of live objects. Each object is either a file or a directory.
+  The file system consists of a finite set of "live" objects (objects currently present in the system). Each object is either a file or a directory.
+
+    - *Note on finiteness*: Real-world file systems are finite due to physical storage constraints. Our model reflects this practical limitation.
+  
+    - *Note on terminology*: We use "objects" to mean the files and directories currently accessible in the filesystem.
+
+    - *Note on liveness*: One design decision we have taken is to give files 'live' or 'erased' attributes. This is because it makes removal operations easier to reason about - we can change only the attribute rather than restructuring the entire tree. This also corresponds to real-life scenarios where a deleted file might be labeled as garbage instead of being completely removed right away (e.g., recycle bins, or file systems that mark blocks as free without immediately overwriting them).
 
 2. **Root Directory.**
   There is a single distinguished root directory. The root has no parent and is always a directory object. Whether an object is the root must be decidable, ensuring a clear entry point to the hierarchy.
@@ -48,7 +54,7 @@ This section specifies what our abstract model of a file system must satisfy bef
   Each non-root object has exactly one parent directory, and each directory may contain zero or more child objects. This forms a rooted tree under a “contained-in” relation satisfying preorder properties (reflexivity and transitivity), consistent with Silberschatz (Ch. 11.2).
 
 4. **Metadata / Information.**
-  Each object has associated “information” — a placeholder for contents, attributes, or status. Silberschatz (Ch. 11.3 “File Attributes”) lists timestamps, permissions, and file type as examples. Our abstract model only assumes an information field without constraining its structure.
+  Each object has associated "information" - a placeholder for contents, attributes, or status. Silberschatz (Ch. 11.3 “File Attributes”) lists timestamps, permissions, and file type as examples (and the metatdata). Our abstract model only assumes an information field without constraining its structure.
 
 5. **File vs. Directory Predicate.**
   Whether an object is a directory must be decidable. Only directories may have children, and the root is always a directory.
@@ -58,7 +64,7 @@ This section specifies what our abstract model of a file system must satisfy bef
 6. **Retrieving Information.**
   Given any object, the model must provide a way to extract its information (metadata or status).
 
-7. **Navigating the Hierarchy.**
+7. **Querying the Hierarchy.**
   The model must support querying the children of any directory and the parent of any non-root object.
 
 8. **Adding and Removing Objects.**
@@ -109,6 +115,11 @@ We check our model against those points. As for features:
     - **Pathnames**: Existing file systems usually separate the notion of files / directories themselves and their pathnames. We find this to be unnecessary: pathnames are used as unique identifiers, but when we talk about different objects in a modeling language, we are already identifying them in some way. Therefore we didn't explicitly define path names in our model.
     - **Metadata**: We can just include them as the information contained in files / directories.
     - **Storage Allocation etc.**: This aspect is ignored since the physical storage details are not the focus of our model.
+    - **Symbolic and Hard Links**: Many real-world file systems (e.g., Unix-based systems like ext4, Btrfs) support symbolic links and hard links that create non-tree structures. Symbolic links can point to arbitrary paths, and hard links allow a single file to have multiple parent directories. Our model deliberately restricts to tree hierarchies for simplicity and understandability. This means our model is not accurate for file systems with link features.
+    - **Other Limitations**: Our model also omits several other real-world filesystem features:
+        - **Special File Types**: Device files, pipes, sockets (common in Unix systems)
+        - **Copy-on-Write and Snapshots**: Features in modern filesystems like Btrfs, ZFS
+        - **Virtual Filesystems**: /proc, /sys in Linux that don't correspond to disk storage
 - **Pragmatic Feature**: The model retains the essential features of a file system: the APIs of our model have given ways to extract the information in files, provide all access to the file system structure, and to modify the system by adding / removing objects. This can be use in place of the original.
 
 As for characteristics:
