@@ -6,10 +6,11 @@ An order processing system consists of the following elements.
 
 1. Entities and Types.
    - Customer with a unique identifier.
-   - Item with name/description and cost.
-   - Payment as an abstract concept with two concrete types Cash and Credit, each with an amount.
+   - Item with name/description and cost (in cents).
+   - Payment as a single concept with a payment type in {Cash, Credit} and an amount (in cents).
    - Order with a status (success/failure), exactly one customer reference, one or more items, and one or more payments.
    - Status is an enumeration with two values: success and failure.
+   - Cost: a total-cost function cost : Order → ℕ (in cents), defined as the sum of item costs.
 
 2. Customer identifiers are unique within the system.
 
@@ -21,7 +22,7 @@ An order processing system consists of the following elements.
 
 6. Each payment belongs to exactly one order.
 
-7. All payments are of a valid subtype (Cash or Credit).
+7. All payments have a valid type in {Cash, Credit}.
 
 8. Every order has a status in {success, failure}.
 
@@ -30,8 +31,8 @@ An order processing system consists of the following elements.
 9. Core Operations.
    - Determine order status.
    - Identify the customer for a given order.
-   - Calculate the total cost of an order.
-   - Verify payment validity or classify payments by subtype.
+   - Calculate the total cost of an order (in cents).
+   - Verify payment validity or classify payments by type.
 
 ### Guarantees and Verification
 
@@ -57,7 +58,7 @@ We reuse the same modeling criteria as in the file system:
 
 Below, each specification item is realized in Alloy and in Agda.
 
-### Spec 1: Entities and Types (Customer, Item, Payment, Cash, Credit, Order, Status)
+### Spec 1: Entities and Types (Customer, Item, Payment, Order, Status)
 
 #### Alloy Implementation
 
@@ -91,44 +92,41 @@ enum Status { success, failure }  // Status is an enumeration
 
 #### Agda Implementation
 
-In Agda, entities are modeled as records or data types. Relationships between entities are expressed as fields within these records. Enumerations are defined using `data`.
+In Agda, Payment is unified with an explicit PaymentType; all amounts are in cents (ℕ).
 
 ```agda
 data Status : Set where
-  success failure : Status  -- Status is an enumeration
+  success failure : Status
+
+data PaymentType : Set where
+  cash credit : PaymentType
 
 record Customer : Set where
   eta-equality
-  field id : ℕ  -- Customers have a unique ID (natural number)
+  field id : ℕ
 
 record Item : Set where
   field
-    name : String  -- Items have a name
-    cost : Float   -- Items have a cost
+    name : String
+    cost : ℕ  -- cents
 
 record Payment : Set where
-  field amount : Float  -- Payments have an amount
-
-record Cash : Set where
-  field amount : Float  -- Cash payments have an amount
-
-record Credit : Set where
-  field amount : Float  -- Credit payments have an amount
+  field
+    paymentType : PaymentType
+    amount      : ℕ  -- cents
 
 record Order : Set where
   field
-    status   : Status      -- Each order has a status
-    customer : Customer    -- Each order references a customer
-    items    : List⁺ Item  -- Each order contains a non-empty list of items
-    payments : List⁺ Payment  -- Each order contains a non-empty list of payments
+    status   : Status
+    customer : Customer
+    items    : List⁺ Item
+    payments : List⁺ Payment
 ```
 
 #### Key Features of the Agda Model:
-1. Each entity is modeled as a record, which groups related fields together. For example, `Customer` is a record with a single field `id`.
-2. Relationships between entities are expressed as fields within records. For instance, the `customer` field in `Order` links an order to a specific customer.
-3. `Cash` and `Credit` are separate records, and their relationship to `Payment` is established through conversion functions (see Spec 7).
-4. The `Status` enumeration is defined as a `data` type with two constructors: `success` and `failure`.
-5. The `List⁺` type ensures that `items` and `payments` are non-empty, enforcing constraints at the type level.
+1. Unified Payment with PaymentType (cash|credit).
+2. Monetary values are natural numbers (cents).
+3. Non-emptiness by construction via List⁺.
 
 #### Comparison
 
@@ -186,41 +184,26 @@ fact uniqueCustomerIds {
 
 #### Agda Implementation
 
-In Agda, the uniqueness of customer identifiers is not enforced globally by default. Instead, the model provides tools to reason about equality of customers, enabling uniqueness to be proven at a higher level (e.g., within a "system" wrapper).
+Enforced structurally with fresh lists (List#) in a System wrapper.
 
 ```agda
-record Customer : Set where
-  eta-equality
-  field id : ℕ  -- Customers have a unique ID (natural number)
+customer-≢ : Customer → Customer → Set
+customer-≢ x y = ¬ (x ≡ y)
 
--- Decidable equality for customers
-customer-equal? : Customer → Customer → Bool
-customer-equal? x y = Customer.id x Nat.≡ᵇ Customer.id y
-
-customer-equal-dec : (x y : Customer) → Dec (x ≡ y)
-customer-equal-dec x y = customer-equal? x y because customer-equal-reflects x y
-```
-
-#### Key Features of the Agda Model:
-1. The `customer-equal?` function provides a Boolean test for equality of customers based on their `id` field.
-2. The `customer-equal-dec` function provides a decidable equality proof, allowing reasoning about customer uniqueness in a formal system.
-3. To enforce global uniqueness, one could define a `System` record containing a collection of customers and a proof that their IDs are unique.
-
-Example of a potential `System` record:
-```agda
 record System : Set where
+  eta-equality
   field
-    customers : List Customer
-    uniqueIDs : AllUnique (map Customer.id customers)
+    customers : List# Customer customer-≢
+    orders    : List Order
 ```
 
 #### Comparison
 
-| Feature                  | Alloy                                                                                     | Agda                                                                                     |
-|--------------------------|-------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| **Global Uniqueness**     | Enforced globally using the `fact uniqueCustomerIds`.                                     | Not enforced globally; requires a `System` wrapper with a proof of uniqueness.           |
-| **Equality**              | Implicitly based on the `id` field; no explicit equality function provided.               | Explicit equality function (`customer-equal?`) and decidable equality proof (`customer-equal-dec`). |
-| **Constraint Checking**   | Checked declaratively during analysis using Alloy's SAT solver.                          | Requires explicit proofs or reasoning in a higher-level system.                          |
+| Feature                | Alloy                                    | Agda                                      |
+|------------------------|-------------------------------------------|-------------------------------------------|
+| Uniqueness Enforcement | Declarative fact.                         | Structural via List# (fresh lists).       |
+| Equality                | Implicitly based on the `id` field; no explicit equality function provided.               | Explicit equality function (`customer-equal?`) and decidable equality proof (`customer-equal-dec`). |
+| Constraint Checking   | Checked declaratively during analysis using Alloy's SAT solver.                          | Requires explicit proofs or reasoning in a higher-level system.                          |
 
 #### Strengths and Weaknesses
 
@@ -377,20 +360,26 @@ fact paymentsInOneOrder {
 
 #### Agda Implementation
 
-In Agda, payment ownership is not modeled directly. To enforce ownership, one could index `Payment` by its owning `Order` or record an ownership relation in a `System` type and prove functionality.
+Payments are stored inside Order.payments. Ownership can be implemented with one of:
 
 ```agda
-record Payment : Set where
+-- Option A: Indexed payments
+record Payment (owner : Order) : Set where
   field
-    amount : Float
+    paymentType : PaymentType
+    amount      : ℕ
+
+-- Option B: System-level ownership relation
+record OrderPayment : Set where
+  field
+    order   : Order
+    payment : Payment
 
 record System : Set where
   field
-    payments : List (Σ Order Payment)  -- Payments indexed by their owning order
+    orders    : List Order
+    ownership : List (Σ Order (λ _ → Payment))  -- pairs of (order, payment)
 ```
-
-#### Key Features of the Agda Model:
-1. Ownership can be modeled explicitly using indexed types or a `System` wrapper.
 
 #### Comparison
 
@@ -421,33 +410,23 @@ check PaymentSubtypes {
 
 #### Agda Implementation
 
-In Agda, subtyping is not enforced structurally. Instead, conversion functions are used to embed `Cash` and `Credit` into `Payment`.
+Unified record with enumeration.
 
 ```agda
+data PaymentType : Set where
+  cash credit : PaymentType
+
 record Payment : Set where
-  field amount : Float
-
-record Cash : Set where
-  field amount : Float
-
-record Credit : Set where
-  field amount : Float
-
-cash2Pay : Cash → Payment
-cash2Pay c = record { amount = Cash.amount c }
-
-cred2Pay : Credit → Payment
-cred2Pay c = record { amount = Credit.amount c }
+  field
+    paymentType : PaymentType
+    amount      : ℕ
 ```
-
-#### Key Features of the Agda Model:
-1. Subtyping is modeled using conversion functions rather than structural inheritance.
 
 #### Comparison
 
-| Feature                  | Alloy                                                                                     | Agda                                                                                     |
-|--------------------------|-------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| **Subtyping Enforcement** | Enforced structurally using `abstract sig` and `extends`.                                 | Modeled using conversion functions.                                                     |
+| Feature                | Alloy                                   | Agda                                               |
+|------------------------|------------------------------------------|----------------------------------------------------|
+| Subtyping Enforcement  | Structural via abstract/extends.         | By-construction via enumerated PaymentType field.  |
 
 
 ### Spec 8: Status Well-Formedness
@@ -528,18 +507,20 @@ fact totalCost {
 In Agda, core operations are implemented as executable functions. For example, the total cost of an order can be computed directly, and queries can be performed using functions.
 
 ```agda
--- Sum of non-empty list of items
-sum⁺ : List⁺ Item → Float
-sum⁺ (x ∷ xs) = Item.cost x + sum xs
+-- total cost (cents) from non-empty list of items
+sum⁺ : List⁺ Item → ℕ
+sum⁺ l⁺ = Item.cost (List⁺.head l⁺)
+         + foldr (λ i acc → Item.cost i + acc) 0 (List⁺.tail l⁺)
 
--- Total cost of an order
-getCost : Order → Float
+getCost : Order → ℕ
 getCost o = sum⁺ (Order.items o)
 
--- Query orders by customer
-queryOrders : List Order → Customer → List Order
-queryOrders os c = filter (λ o → Order.customer o ≡ c) os
+-- query orders by customer (using decidable equality on ids)
+query : List Order → Customer → List Order
+query os c = filter (λ o → customer-equal-dec (Order.customer o) c) os
 ```
+
+All monetary results are in cents (ℕ).
 
 #### Key Features of the Agda Model:
 1. Operations like `getCost` are implemented as executable functions.
@@ -561,47 +542,56 @@ This section compares how verification of constraints and guarantees is supporte
 
 #### Alloy Implementation
 
-In Alloy, verification is performed using `check` and `run` commands. These commands allow bounded verification of constraints and exploration of possible instances.
+In Alloy, verification is performed using `check` and `run` commands. These commands enable bounded verification of constraints (the “small scope hypothesis”) and exploration of possible instances.
 
 ```alloy
-check NonEmptyItemsPayments {
-  all o: Order | some o.items and some o.payments
-}
-
+check ValidStatus { all o: Order | o.status in Status }
+check CustomersExist { all o: Order | o.customer in Customer }
+check NonEmptyItemsPayments { all o: Order | some o.items and some o.payments }
+check PaymentSubtypes { all p: Payment | p in Cash or p in Credit }
 run {} for 5 but 3 Int
 ```
 
 #### Key Features of the Alloy Model:
-1. Verification is automated and bounded, relying on SAT solvers to find counterexamples or generate instances.
-2. The `check` command ensures that constraints hold within the specified bounds.
-3. The `run` command generates instances that satisfy the model's constraints.
+1. Automated, bounded verification via SAT solving; great at finding counterexamples in small scopes.
+2. `check` validates constraints within the chosen scope; `run` generates example instances.
+3. Excellent debugging workflow: counterexamples illustrate specification mistakes quickly.
 
 #### Agda Implementation
 
-In Agda, verification is performed through type-level guarantees and explicit proofs. Constraints are encoded in types, and global properties can be proven within a `System` wrapper.
+In Agda, many constraints are enforced by construction (types), and global properties are proven universally (for all sizes) rather than checked up to a bound.
 
 ```agda
+-- By construction:
+--   Order.items    : List⁺ Item      -- non-empty by type
+--   Order.payments : List⁺ Payment   -- non-empty by type
+--   Order.status   : Status          -- well-formed by type
+--   Payment.paymentType : PaymentType -- cash|credit by type
+
+-- System-level wrappers can state and prove global properties (e.g., uniqueness):
 record System : Set where
   field
-    orders : List Order
-    allValid : All (λ o → validOrder o) orders
+    customers : List# Customer customer-≢
+    orders    : List Order
 
-validOrder : Order → Bool
-validOrder o = not (null (Order.items o)) ∧ not (null (Order.payments o))
+-- Example (sketch): properties are stated/proved universally (no bounding).
+-- There is no need for runtime predicates like `null` because non-emptiness is encoded in the types.
 ```
 
 #### Key Features of the Agda Model:
-1. Verification is constructive, relying on type-level guarantees and explicit proofs.
-2. Constraints like non-emptiness are enforced at the type level, eliminating the need for runtime checks.
-3. Global properties (e.g., all orders are valid) can be proven explicitly within a `System` wrapper.
+1. Universal guarantees: proofs hold for all instances and sizes (no bounding).
+2. Many invariants (non-emptiness, well-formed enums) are correct-by-construction via types.
+3. Harder debugging when the spec is wrong: failed proofs don’t give counterexamples.
 
 #### Comparison
 
-| Feature                  | Alloy                                                                                     | Agda                                                                                     |
-|--------------------------|-------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| **Verification Method**   | Automated, bounded verification using SAT solvers (`check`, `run`).                       | Constructive verification through type-level guarantees and explicit proofs.             |
-| **Constraint Checking**   | Declarative constraints are checked automatically.                                        | Constraints are encoded in types or proven explicitly.                                   |
-| **Instance Generation**   | Instances are generated using the `run` command.                                          | No instance generation; focuses on correctness by construction.                         |
+| Aspect                     | Alloy                                                                                   | Agda                                                                                          |
+|---------------------------|------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| Scope of assurance        | Bounded (“small scope”); checks within a chosen finite scope.                           | Universal; proofs hold for all sizes and instances.                                           |
+| Debugging                 | Easy: automatic counterexamples aid rapid diagnosis.                                     | Harder: failed proof gives no counterexample; deriving one can be difficult.                  |
+| Nature of result          | Falsification up to a bound; confidence relies on small-scope hypothesis.               | Sound, constructive proofs; guarantees independent of bounds.                                 |
+| Instance exploration      | Yes, via `run`.                                                                          | No; focus is on proving properties.                                                           |
+| Invariant enforcement     | Declaratively via facts and checks.                                                      | By construction (types) and explicit proofs in a `System` wrapper for global properties.      |
 
 ### Summary
 
@@ -645,7 +635,7 @@ Summary mapping:
 | 4      | Non-empty items                              | `items : List⁺ Item` enforces non-emptiness by type.                                                             | `items: some Item` multiplicity.                                                                      |
 | 5      | Non-empty payments                           | `payments : List⁺ Payment` enforces non-emptiness by type.                                                       | `payments: some Payment` multiplicity.                                                                |
 | 6      | Payment belongs to exactly one order         | Not modeled; would require indexed payments or a system-level ownership relation and proofs.                     | `fact paymentsInOneOrder` enforces one-order ownership.                                               |
-| 7      | Valid payment subtyping                      | Conversions `cash2Pay`/`cred2pay`; not enforced if Payment constructor is exposed.                               | Structural subtyping via signature hierarchy; optional reinforcing check.                             |
+| 7      | Valid payment subtyping                      | Conversions `cash2Pay`/`cred2Pay`; not enforced if Payment constructor is exposed.                               | Structural subtyping via signature hierarchy; optional reinforcing check.                             |
 | 8      | Status well-formed                           | `Status` datatype and `status : Status` in `Order`.                                                              | `enum Status` and field typing; check `ValidStatus`.                                                  |
 | 9      | Operations (status, customer, total cost, …) | Selectors; executable `getCost`; customer equality and `query`; interface `IsOrder` with `costᵒ` and `queryᵒ`.   | Declarative assertions; no execution; could assert relationships involving costs if modeled.          |
 | 10     | Verification modality                        | Type-level guarantees, reflection lemmas, and potential proofs over a System wrapper.                            | Facts and `check` for bounded counterexample search; `run` to generate instances.                     |

@@ -1,13 +1,13 @@
 ```agda
 module OrderSystem where
 
-open import Data.Float 
 open import Data.String using (String)
-open import Data.List using (List; []; _∷_; foldr; filter)
+open import Data.List using (List; []; _∷_; foldr; filter; any)
 open import Data.List.NonEmpty using (List⁺)
+open import Data.List.Fresh using (List#; []; _∷#_)
 open import Data.Bool
 open import Data.Product
-open import Data.Nat using (ℕ; compare; Ordering; equal)
+open import Data.Nat using (ℕ; compare; Ordering; equal; _+_)
 
 open import Relation.Nullary
 open import Relation.Binary.PropositionalEquality
@@ -27,26 +27,21 @@ An order system consists of the following classes:
     and a non-empty list of `Payment`s.
     It must be owned by a `Customer`.
     It has a method to calculate the total cost of the order.
-- `Customer`, which has a name, and could have multiple orders.
+- `Customer`, which has a unique identifier, and could have multiple orders.
 - `Item`, which has a name, and a cost.
-- `Payment`, which could be `Cash` or `Credit`
-    It stores the amount of the payment.
+- `Payment`, which stores the amount and payment type (cash or credit).
     It must be owned by an `Order`.
 
 ## By-signature Specification
 
 - `Customer : Set` should be a record with a single field `id : ℕ`
-- `Cash : Set` and `Credit : Set` should be a record containing
-    a field `amount : Float` and other status information 
-- `Payment : Set` a record that contains a single field `amount : Float`
-    can be formed from `Cash` or `Credit` by respective functions
-    `cash2Pay : Cash → Payment` and `cred2Pay : Credit → Payment`
+- `Payment : Set` a record that contains fields `amount : ℕ` and `paymentType : PaymentType`
 - `Order : Set` should be a record with the following fields:
     a non-empty list of items `items : List⁺ Item`
     a non-empty list of payments `payments : List⁺ Payment`
     a customer `Customer`
     the current `Status : Set`
-    and a function that returns its total cost `cost : Order → Float`
+    and a function that returns its total cost `cost : Order → ℕ`
 
 # The approach with specific data types
 
@@ -54,6 +49,10 @@ An order system consists of the following classes:
 data Status : Set where
     success : Status
     failure : Status
+
+data PaymentType : Set where
+    cash : PaymentType
+    credit : PaymentType
 
 record Customer : Set where
     eta-equality
@@ -63,19 +62,12 @@ record Customer : Set where
 record Item : Set where
     field
         name : String
-        cost : Float
+        cost : ℕ  -- cost in cents
 
 record Payment : Set where
     field
-        amount : Float
-
-record Cash : Set where
-    field
-        amount : Float
-
-record Credit : Set where
-    field
-        amount : Float
+        paymentType : PaymentType
+        amount : ℕ  -- amount in cents
 
 record Order : Set where
     field
@@ -88,7 +80,7 @@ record Order : Set where
 For customers, we need to define equality for them.
 
 ```agda
--- posible with eta-equality
+-- possible with eta-equality
 customer-equal
   : ∀ {x y : Customer} 
   → Customer.id x ≡ Customer.id y 
@@ -121,6 +113,19 @@ customer-equal-reflects x y with customer-equal? x y in p
 
 customer-equal-dec : ∀ (x y : Customer) → Dec (x ≡ y)
 customer-equal-dec x y = customer-equal? x y because customer-equal-reflects x y
+
+-- Customer inequality for fresh lists
+customer-≢ : Customer → Customer → Set
+customer-≢ x y = ¬ (x ≡ y)
+```
+
+Using fresh lists to ensure unique customer IDs in the system:
+
+```agda
+record System : Set where
+    field
+        customers : List# Customer customer-≢  -- customers with unique IDs
+        orders : List Order
 ```
 
 We can query the orders of a customer from a list of orders (`query`).
@@ -128,27 +133,20 @@ We can query the orders of a customer from a list of orders (`query`).
 ```agda
 query : List Order → Customer → List Order
 query os c = filter (λ o → customer-equal-dec (Order.customer o) c) os 
-```
 
-Payment could be formed from `Cash` or `Credit`.
-
-```agda
-cash2Pay : Cash → Payment
-cash2Pay cash = record {amount = (Cash.amount cash)}
-
-cred2pay : Credit → Payment
-cred2pay credit = record {amount = (Credit.amount credit)}
+-- Query orders for a customer within a system
+query-system : System → Customer → List Order
+query-system sys c = query (System.orders sys) c
 ```
 
 To calculate the total cost for an order:
 
 ```agda
--- handwrite this seemed more convenient than using stdlib
-sum⁺ : List⁺ Item → Float
-sum⁺ l⁺ = (Item.cost (List⁺.head l⁺)) + (foldr (λ item float → ((Item.cost item) + float))
-                                       0.0 (List⁺.tail l⁺))
+sum⁺ : List⁺ Item → ℕ
+sum⁺ l⁺ = (Item.cost (List⁺.head l⁺)) + (foldr (λ item total → ((Item.cost item) + total))
+                                       0 (List⁺.tail l⁺))
 
-getCost : Order → Float
+getCost : Order → ℕ
 getCost o = sum⁺ (Order.items o)
 ```
 
@@ -184,6 +182,6 @@ queryᵒ os c = filter (λ (_ , (a , eva)) →
 For computing the cost of an order
 
 ```agda
-costᵒ : ∀ {A : Set} → A → IsOrder A → Float
+costᵒ : ∀ {A : Set} → A → IsOrder A → ℕ
 costᵒ a eva = sum⁺ ((IsOrder.items eva) a)
-``` 
+```
