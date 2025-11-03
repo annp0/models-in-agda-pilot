@@ -374,7 +374,6 @@ Post-conditions are proved at the type level; results inhabit the same algebraic
 | **8**   | Reflexivity                    | Tested: `diff(a,a)` yields NO_CHANGE patch.                                                                                                | Proven by structural induction.                                                                                                |
 | **9**   | Localized effects              | Left/right edits are isolated; unaffected branches unchanged.                                                                              | Sub-edits typed to child position; non-interference proven.                                                                    |
 | **10**  | Shape consistency              | `apply` always returns valid tree or `null`; never malformed.                                                                              | Post-conditions enforced by datatype; result always a valid tree.                                                              |
-| **11**  | Determinism and inspectability | Pure rule set, no randomness; patch kind and scope visible via fields.                                                                     | Structural recursion, deterministic; change kind and scope visible by pattern matching.                                        |
 
 ## Reasons for Differences
 
