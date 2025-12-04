@@ -15,7 +15,7 @@ We first define what is the infrastructure for a rail system:
 
 This would make a graph, and the graph can always be refined by adding stations on edges.
 
-```
+```agda
 module RailSystem where
 
 record Infra : Set₁ where
@@ -45,7 +45,7 @@ between `adjacent` posiitons. We define what is `adjacent`:
 (3) the train moved from a station to a track that originates from that station
 (4) the train move from a track to another track connected via a station
 
-```
+```agda
 data Adjacent (N : Infra) : (x y : N .Station ⊎ N .Track) → Set₁ where
   -- if two stations are the same station, they are adjacent
   station-station : ∀ {x y} → x ≡ y → Adjacent N (inj₁ x) (inj₁ y)
@@ -64,7 +64,7 @@ A train is just a function from time ticks `ℕ` to positions (stations ⊎ trac
 and it must satisfy the continuity condition (i.e. can only move between adjacent
 locations between time ticks)
 
-```
+```agda
 record Train (N : Infra) : Set₁ where
   field
     position : ℕ → N .Station ⊎ N .Track
@@ -79,7 +79,7 @@ We define what is `consistent` for two trains to co-exist in the system:
 (1) & (2): if one train is in a station, we are fine
 (3): if two trains are both on tracks, they must not be on the same track
 
-```
+```agda
 data Pairwise-consistent (N : Infra) (t₁ t₂ : Train N) (n : ℕ) : Set₁ where
   stationl : ∀ {s} → t₁ .position n ≡ inj₁ s → Pairwise-consistent N t₁ t₂ n
   stationr : ∀ {s} → t₂ .position n ≡ inj₂ s → Pairwise-consistent N t₁ t₂ n
@@ -95,7 +95,7 @@ Now we can define a Network (multiple trains running on an infra).
 It is going to have some physically possible trains, and 
 the property that all those trains can co-exist with each other.
 
-```
+```agda
 record Network (N : Infra) : Set₁ where
   open Infra N
   field
@@ -110,7 +110,7 @@ record Network (N : Infra) : Set₁ where
 
 Example time!
 
-```
+```agda
 open import Data.Unit using (⊤ ; tt)
 open import Data.Empty using (⊥ ; ⊥-elim)
 open import Data.Fin using (Fin ; zero ; suc)
@@ -118,15 +118,16 @@ open import Data.Fin using (Fin ; zero ; suc)
 
 Let's say we have 4 stations and 4 tracks:
 
+```c
 0 ------ 0 ------> 1
 ^                  | 
 |                  1
 3                  |
 |                  |
 3 <----- 2 ------- 2 
-
-
 ```
+
+```agda
 -- patterns for Fin 4
 pattern f0 = zero
 pattern f1 = suc zero
@@ -169,7 +170,7 @@ dstL = Infra.dst loopInfra
 
 The movement pattern would just be trains running in loops!
 
-```
+```agda
 -- next track on the loop
 nextTrack : LoopTrack → LoopTrack
 nextTrack f0 = f1
