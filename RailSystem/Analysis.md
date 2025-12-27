@@ -1,219 +1,215 @@
-Railway systems are critical infrastructure with stringent safety requirements. To reason rigorously about their behaviour, engineers and researchers have, for decades, advocated formal modelling techniques that make domain assumptions explicit and enable logical reasoning about important properties such as collision-freedom and progression. Formal methods in the railway domain have been systematically surveyed and applied to many aspects of signalling, interlocking, scheduling, and control logic. ([1])
+### Motivation
 
-These models vary in scope and abstraction, but at the core they all represent:
+Railway systems are safety critical infrastructures in which correctness requirements are dominated not by performance or realism, but by structural safety properties. For this reason, railway engineering has long served as a canonical application domain for formal methods. [1](https://dl.acm.org/doi/abs/10.1145/3520480)
 
-* A topology of physical resources (tracks, blocks, stations).
-* A dynamics governing movement along that topology.
-* Interactions between the participants (for example, safety requirements related to occupancy and separation.)
+The goal of this document is to present a foundational formal model for agents moving on networked infrastructure. While railways serve as the motivating example, the model itself is intentionally abstract. Past lessons [2](https://link.springer.com/article/10.1007/s10270-025-01276-3) taught us that it should capture the minimal structure required to reason about movement, locality, and interaction between multiple agents, without committing prematurely to domain‑specific operational details.
 
-Here we try to define a minimal for moving agents (trains) on a railway infrastructure that is consistent with our intuition and existing literature.
+We proceed by gradually introducing structural elements and behavioural constraints, with each addition motivated by the need to express particular classes of properties. More detailed or realistic models should be viewed as extensions of this core, rather than replacements.
 
+### (1) Infrastructure Topology
 
-### Modelling the topology of physical resources
+At the most abstract level, the infrastructure on which agents move is finite and fixed. It constrains where agents may be and how they may move, but does not itself encode behaviour. [3](https://www.railtopomodel.org/files/download/RailTopoModel/180416_uic_irs30100.pdf) [4](https://www.railtopomodel.org)
 
-At the most fundamental level, a railway network can be viewed as a directed graph:
+A naive approach would represent stations as nodes and tracks as edges. While intuitive, this distinction becomes less useful once occupancy and interaction constraints are considered. In particular, both stations and track segments may act as resources whose usage must be reasoned about over time. Treating them differently at the structural level introduces unnecessary asymmetry. [5](https://ceur-ws.org/Vol-2721/paper588.pdf)
 
-* Nodes represent locations such as stations, switches, or blocks.
-* Edges represent segments of track connecting these locations.
+We therefore adopt a uniform representation in which all occupiable elements of the infrastructure are modelled in the same way.
 
-Formalizations in the literature typically start with an abstract representation of topology before introducing dynamics; for instance, standard topology models like the `RailTopoModel` define a systematic representation of railway network elements and their connectivity to support simulation and verification across tools. ([2]) This should be our starting point. Following this, the proposed specs are the following:
+The infrastructure is modelled as a directed bipartite graph consisting of:
 
-* `Station`: a set of discrete waypoints in the network.
-* `Track`: a set of directed segments connecting stations.
-* `src : Track → Station`: source endpoint of a segment.
-* `dst : Track → Station`: destination endpoint of a segment.
+- a finite set `R` of resources, representing occupiable elements of the infrastructure (including track segments and stations), and
 
-This corresponds directly to a connectivity graph. The use of explicit endpoint functions ensures that a track segment always has well-defined endpoints and enables reasoning about adjacency and legal movement (see next section).
+- a finite set `N` of transitions, representing admissible changes between resources.
 
-### Modeling of Movement Semantics
+Each transition connects exactly two resources:
 
-#### Time and States should be discrete! 
+- in : `N -> R`, the source resource, and
 
-In safety-critical systems, it is common to model behaviour in discrete time for tractability. Even in standards such as ETCS, movement authorities and protected blocks can be reasoned about in discrete steps during verification. The semantics of motion can be given as a state transition system where states are configurations of the system at a discrete instant and transitions capture permitted changes. This is analogous to Kripke structures used in model checking. ([3])
+- out : `N -> R`, the destination resource.
 
-#### Adjacency and Locality of States
+Intuitively, a resource corresponds to a portion of the infrastructure that may be occupied for a non‑zero duration, while a transition represents a momentary change of occupancy.
 
-When we want a model of "states" with "time" that is close to reality, usually we require some sort of continuity. That is, each of those "states" should only transit into "adjacent states" for each adjacent ticks. It is up to us to define what it means by "adjacent". 
+This representation is compatible with event‑based and discrete‑event models commonly used in transportation and routing systems, and avoids ambiguity about where exclusivity constraints should apply.
 
-In our case, we want to define "motion" over the existing topology, i.e. we want to define what it means to move "one step" in the network - or in another sense, what "states" are close to each other. In real railway systems:
+### (2) Time and States
 
-* A train may stay on its current segment or at a location between control ticks.
-* A train moves from a station onto an outgoing track (departure).
-* A train moves from the end of a track to the next station (arrival).
-* A train may traverse connected segments without stopping if signals and blocks permit.
+Our interests, for this model, are mostly structural. In particular, we are concerned with invariants such as exclusivity of resources, admissible adjacency of movement, and the absence of unsafe configurations. These properties are defined over configurations of the system and their evolution, rather than over continuous trajectories or physical dynamics.
 
-This aligns with widely used formalisms in discrete event systems (for example DEVS) where adjacency defines permitted local transitions between states, although the formal scheduling time is not continuous. ([4])
+For such properties, it is sufficient to reason about system behaviour as a sequence of abstract instants, each representing a configuration in which occupancy and movement constraints can be evaluated. This perspective is standard in the verification of safety-critical systems, where behaviour is analysed as a transition between well-defined states rather than as continuous motion.
 
-So, at any discrete time step:
+We therefore model system evolution in discrete time. Let `T = {0, 1, 2, ...}` denote the set of time steps. Each element of `T` corresponds to an abstract control or observation instant at which the global configuration of the system is considered.
 
-1. A train may remain at its current location.
-2. A train may move from a station to a track whose source matches the station.
-3. A train may move from a track to the station at the track’s destination.
-4. A train may move from one track to another if the first track’s destination is the second track’s source.
+This choice aligns naturally with state-transition formalisms commonly used in model checking [6](https://mitpress.mit.edu/9780262038836/model-checking) [7](https://kilthub.cmu.edu/articles/journal_contribution/European_Train_Control_System_A_Case_Study_in_Formal_Verification/6605291/files/12095732.pdf), where systems are represented as sequences of configurations linked by admissible transitions, and safety properties are expressed as invariants over these configurations.
 
-Each rule corresponds to the physically plausible motion of a train over a micro-step of the network topology.
+### (3) Agent Positions as Time-Indexed States
 
-### Agents as Time-Indexed Trajectories
+Given this discrete notion of time, the state of an individual agent at a time step must record which part of the infrastructure it occupies. Since all occupiable elements of the infrastructure are uniformly represented as resources, an agent's state can be captured directly as a resource identifier.
 
-In railway modelling, the behaviour of each train can be formalized as a time-indexed trajectory over the network. This practice is common in formal verification approaches where each train's movement is modelled as a function of time with constraints imposed by signalling and block occupancy rules. ([1])
+Let Agent denote the finite set of agents (e.g. trains). We define the position of an agent as a function
 
-* A train has a position at each discrete time step.
-* This position is either a station or a track segment.
-* The train's evolution over time is "continuous".
+```
+pos : Agent x T -> R
+```
 
-This perspective is consistent with modelling paradigms used in the analysis of automated train operation systems, where trains are represented as state machines that evolve under local transition relations that respect the network topology.
+where `pos(a, t)` denotes the resource occupied by agent `a` at time `t`s.
 
-### Block Occupancy Safety
+This representation makes explicit the assumptions required for safety reasoning:
 
-One of the most fundamental safety principles in rail operations is that two trains should not occupy the same block or track segment at the same time, unless the signalling system explicitly allows it (e.g., moving block systems in ETCS Level 3). Traditional fixed block systems enforce this via signalling systems such as Automatic Block Signalling, which subdivide tracks into sections that behave like safety barriers. ([5])
+- at each time step, the occupancy of resources is well-defined;
 
-* If at any time two trains are on tracks, they must be on distinct track segments.
-* If either train is at a station, occupancy is permitted (subject to other higher-level constraints).
+- interaction constraints, such as mutual exclusion, can be expressed as predicates over positions at the same time step;
 
-By encoding these safety constraints directly in the model, one can formally verify that no reachable configuration violates the intended separation property. Many formal tools applied to railway signalling and interlocking use related invariants to prove safety properties over system executions. ([6])
+- movement can be described as a relation between successive positions in time.
 
-### Compositional Multi-Agent Systems
+In this way, an agent’s behaviour is naturally interpreted as a time-indexed trajectory through the resource graph, while global safety properties are expressed as invariants over collections of such trajectories.
 
-Modeling multiple trains together introduces the need for compositional reasoning about consistency among agents. Modelling such systems therefore requires compositional reasoning: global safety properties must be derived from the interaction of individual behaviours. This is mirrored in formal railway models that compose multiple agent behaviours (e.g., trains, signals, interlocking logic), often verified using model checking or theorem proving. ([7])
+### (4) Movement Semantics
 
-* A network is a finite collection of trains.
-* A global consistency predicate asserts that for any pair of distinct trains at any time, the pair satisfies the safety constraint defined above.
+The purpose of the movement semantics is not to describe physical dynamics, but to characterise which changes of configuration are admissible between successive time steps. In particular, the movement relation must be rich enough to express progress through the infrastructure, while remaining constrained enough to support locality based safety reasoning. [8](https://digital-library.theiet.org/doi/pdf/10.1049/cp.2016.0511?download=true&utm_source=chatgpt.com)
 
-This compositional structure is necessary to express and verify properties such as collision avoidance and safe sequencing.
+Two requirements guide its formulation.
 
-### How close are we to real life?
+First, movement must respect the topology of the infrastructure. Agents are constrained to move along the physical network and cannot appear arbitrarily at unrelated locations. Any admissible evolution of positions must therefore be compatible with the connectivity structure of the resource graph.
 
-The specification presented here deliberately abstracts away from several real-world complexities. For example:
+Second, movement must be locally incremental. Since time is discretised into abstract instants at which occupancy is evaluated, each step should correspond to a minimal change of position. Allowing an agent to traverse multiple infrastructure elements in a single step would collapse distinct intermediate configurations and prevent precise reasoning about interaction and exclusion.
 
-- Train length is not modelled explicitly; the position of a train denotes its head rather than its full physical extent.
+These requirements together suggest that movement should be defined as a relation between successive positions that is mediated explicitly by the transition structure of the infrastructure.
 
-- Track segmentation can be refined by introducing additional stations or track segments without changing the underlying modelling principles.
+Let `a ∈ Agent` and `t ∈ T`. Between time steps `t` and `t+1`, the position of `a` may evolve in one of the following ways:
 
-- Time granularity and speed are abstracted into discrete steps; finer-grained timing or continuous dynamics could be introduced by refining the time model or the adjacency relation.
+- the agent remains on the same resource, `pos(a, t+1) = pos(a, t)`.
 
-These simplifications are intentional. They allow us to isolate the essential structural and behavioural assumptions while preserving extensibility: richer models can be obtained through systematic refinement rather than redesign. However, it is equally important to acknowledge that these abstractions introduce limitations, and that certain real-world edge cases are not faithfully represented at this level:
+- the agent traverses a transition n ∈ N such that `in(n) = pos(a, t)`, and `out(n) = pos(a, t+1)`.
 
-- a long train simultaneously occupies multiple track segments, and the rear of a train has not yet cleared a block while the head has entered the next one,
+No other changes of position are permitted.
 
-- partial overlap between trains occurs during coupling or decoupling operations.
+This definition ensures that every movement step corresponds either to maintaining occupancy of the current resource or to traversing an explicitly represented transition. As a result, all motion is grounded in the infrastructure topology.
 
-Similarly, the abstraction of track segmentation assumes that track segments are atomic units of occupancy. In real systems, segmentation is often driven by signalling design rather than physical topology, and block boundaries may not align neatly with stations or junctions.
+By restricting admissible movement to stasis and single transitions, the model enforces locality of motion: agents may only move to resources that are directly connected in the graph. Arbitrary jumps across the infrastructure are excluded by construction.
 
-The discrete-time abstraction also limits the model’s ability to represent:
+Although time is discrete, this constraint provides a notion of continuity at the level of the model. An agent’s trajectory is a sequence of adjacent resources, and intermediate configurations are never skipped. This property is essential for reasoning about interaction between agents, since safety constraints such as mutual exclusion are evaluated at every step where resource occupancy may change.
 
-- continuous speed profiles,
-- braking distances and stopping curves,
-- transient states where safety depends on precise timing rather than topological separation.
+In this way, the movement semantics complements the discrete state structure introduced earlier, yielding a state-transition system in which both motion and interaction can be analysed using standard techniques.
 
-Such phenomena are central in detailed operational analyses and performance optimisation, but they lie outside the scope of the present specification.
+### (5) Single Agent Behaviour
 
-Despite these limitations, the chosen abstractions are well justified for the intended purpose of this model.
+Before considering interaction between agents, it is useful to characterise the behaviour of a single agent in isolation. This serves two purposes. First, it makes explicit which aspects of behaviour are determined solely by the infrastructure and movement semantics. Second, it allows interaction constraints to be introduced later without entangling them with basic motion.
 
-First, the specification is aimed at capturing structural safety properties, such as collision avoidance and mutual exclusion, rather than precise physical dynamics. For these properties, discrete abstractions are both common and effective, as evidenced by their widespread use in formal railway verification literature.
+Given the definitions introduced so far, the behaviour of a single agent is completely determined by the movement semantics. At each time step, the agent occupies a resource, and between successive steps its position evolves according to the adjacency constraints induced by the transition structure.
 
-Second, the abstractions are conservative with respect to safety. By treating track segments as indivisible and trains as point-like entities, the model errs on the side of over-approximating potential conflicts rather than missing them. Refinements that introduce train length or finer segmentation can only strengthen the safety guarantees.
+Formally, the evolution of an agent corresponds to a time-indexed sequence of resources such that each successive pair is either identical or connected by a transition. In other words, a single agent traces a path through the resource graph over discrete time.
 
-Third, and most importantly, the abstractions are refinement-friendly. Each simplification corresponds to a modelling choice that can be systematically relaxed:
+At this level, no additional constraints are imposed. The model characterises which evolutions are structurally admissible given the infrastructure, without yet expressing any safety or coordination requirements. This distinction is deliberate: it separates the description of individual motion from assumptions about how multiple agents may interact.
 
-- Train length can be introduced by modelling occupancy as a set of segments rather than a single position.
+### (6) Multi Agent Systems
 
-- Track segmentation can be refined without altering the underlying movement semantics.
+When multiple agents are present, the system must represent their joint configuration at a given time. Since the state of each agent is given by its occupied resource, a global system state at time `t` can be described as the collection of all agent positions:
 
-- Discrete time can be refined into finer steps or replaced by a hybrid discrete–continuous model.
+```
+state(t) = { pos(a, t) | a ∈ Agent }
+```
 
-As a result, the present specification should be understood not as a final model of railway operation, but as a foundational layer upon which more detailed models can be built.
+The evolution of the system consists of the simultaneous evolution of all agent positions from one time step to the next, subject to the movement semantics defined earlier.
 
-### The Universality of our Model: From Railways to Highways
+At this stage, the global state space is simply the Cartesian product of individual agent states. No assumptions are made yet about how agents affect one another.
 
-The formal specification introduced so far was motivated by railway systems and their characteristic safety requirements. However, an important observation is that the core movement model itself is agnostic to the transportation domain. The distinction between railways and other transportation systems arises not from the underlying topology or movement semantics, but from the interaction constraints imposed on agents.
+#### Interaction via Occupancy Constraints
 
-In this section, we show that by relaxing the pairwise safety constraint, the same formal model naturally admits an interpretation as a highway/road traffic system, with trains reinterpreted as cars.
+In many infrastructure based systems, resources are not merely locations but represent elements whose use must be coordinated. In railway systems in particular, track segments and stations are treated as exclusive: they may be occupied by at most one train at any given time. [9](https://dl.ifip.org/db/conf/coordination/coordination2010/Vanit-Anunchai10.pdf) [10](https://www.sciencedirect.com/science/article/pii/S0167642316300570)
 
-#### Shared structural assumptions
+Given that all occupiable infrastructure elements are modelled uniformly as resources, such coordination requirements can be expressed directly as constraints on global states. Specifically, the exclusivity requirement can be formulated as a state invariant:
 
-At an abstract level, both railway systems and highway systems share several fundamental characteristics:
+- For all distinct agents `a ≠ b` and all times `t`, `pos(a, t) ≠ pos(b, t)`.
 
-* A fixed network structure of locations and connecting segments.
-* Agents that move along this network over time.
-* Physical constraints that prevent arbitrary jumps between unrelated locations.
+This invariant rules out global configurations in which two agents occupy the same resource simultaneously. Importantly, it does so without altering the movement semantics themselves. Individual agents still evolve according to the same local rules; only certain joint configurations are deemed inadmissible.
 
-These shared assumptions are already captured by the core components of the model:
+#### Compositional Interpretation
 
-* Infrastructure is represented as a directed graph (`Station`, `Track`, `src`, `dst`).
-* Agent motion is constrained by a local adjacency relation.
-* Individual agents are described as time-indexed trajectories that respect this adjacency.
+The resulting structure admits a compositional interpretation. Each agent evolves independently according to the movement semantics induced by the infrastructure, while interaction between agents is captured entirely by invariants over global states.
 
-Notably, none of these components intrinsically encode rail-specific assumptions such as exclusive occupancy, signalling blocks, or interlocking logic.
+From this perspective, safety properties such as collision avoidance are not encoded as part of the motion model, but arise from restrictions on which combinations of individual behaviours are allowed. This mirrors common practice in formal railway modelling, where signalling and interlocking logic constrain otherwise independent train movements by ruling out unsafe configurations.
 
-#### The role of exclusivity in railway systems
+By separating individual behaviour from interaction constraints, the model supports modular reasoning: properties of single-agent motion can be established independently, and global safety properties can be analysed by studying how these behaviours compose under the imposed invariants.
 
-What distinguishes railway systems from road traffic systems is not movement along a network per se, but the exclusive use of infrastructure resources.
+### Scope and Relation to Real life
 
-In traditional railway operation:
+The model presented here operates at a deliberately abstract level. Its purpose is not to reproduce the full physical behaviour of railway systems, but to isolate a small set of structural assumptions that are sufficient to reason about movement and safety at the level of infrastructure occupancy.
 
-* Track segments (or blocks) are treated as exclusive resources.
-* At most one train may occupy a given segment at any time.
-* Safety is ensured by enforcing this exclusivity through signalling and interlocking mechanisms.
+As a consequence, several aspects of real-world operation are not represented explicitly.
 
-In the formal model, this intuition is captured entirely by the pairwise consistency constraint, which forbids two trains from occupying the same track segment simultaneously.
+First, trains are modelled as occupying a single resource at each time step. This can be interpreted as modelling the position of a train's head rather than its full physical extent. Effects arising from train length, such as simultaneous occupancy of multiple track segments or delayed clearance of a block by the rear of the train, are therefore not captured directly.
 
-Crucially, this constraint is not embedded in the definition of movement or topology. It is imposed separately, at the level of interaction between agents.
+Second, infrastructure segmentation is treated abstractly. Resources are assumed to be atomic units of occupancy, and their granularity is not fixed by physical topology. In real railway systems, segmentation is often driven by signalling design and operational considerations, and block boundaries need not align neatly with stations, junctions, or physical track segments. At the present level of abstraction, such distinctions are intentionally suppressed.
 
-#### Removing exclusivity
+Third, time is treated discretely, and movement is expressed as transitions between configurations. This precludes direct representation of continuous phenomena such as speed profiles, braking curves, or safety constraints that depend on precise timing rather than topological separation.
 
-If the pairwise consistency constraint is removed, the remaining model still describes:
+These omissions are not accidental. They reflect the intended focus of the model.
 
-* Agents moving over a directed graph.
-* Local, physically plausible motion between adjacent locations.
-* Time-indexed trajectories respecting continuity constraints.
+The primary aim is to capture structural safety properties, in particular, properties related to occupancy and admissible movement through the infrastructure. For such properties, discrete abstractions are widely used and have proven effective in formal railway verification. Continuous dynamics are orthogonal to this level of reasoning.
 
-However, without exclusivity, multiple agents may occupy the same track segment at the same time. This behaviour is inconsistent with classical railway operation, but it is entirely natural in the context of road traffic systems.
+Moreover, the abstractions adopted here are conservative with respect to safety. By treating resources as indivisible and agents as occupying a single resource at a time, the model tends to over approximate potential conflicts rather than conceal them. Introducing additional detail, such as train length or finer segmentation, can only strengthen safety guarantees by making conflicts more explicit.
 
-Under this reinterpretation:
+Finally, the model is designed to admit systematic extension. Each abstraction corresponds to a modelling choice that can be relaxed without altering the underlying movement semantics:
 
-* `Station` can be understood as intersections or junctions.
-* `Track` can be understood as road segments.
-* Trains correspond to cars or other road vehicles.
-* Shared occupancy of road segments is permitted.
+- train length can be incorporated by allowing agents to occupy sets of resources rather than a single one,
 
-The same adjacency relation now describes ordinary vehicle motion: entering a road from an intersection, leaving a road into an intersection, or continuing along connected road segments.
+- infrastructure detail can be increased by subdividing resources,
 
-Thus, the base model - without additional safety constraints - aligns closely with common abstractions used in traffic flow modelling and road network simulations.
+- discrete time can be refined or combined with continuous dynamics in a hybrid model.
 
+For these reasons, the specification should be understood not as a complete model of railway operation, but as a foundational layer. It provides a stable structural core upon which more detailed and domain-specific models can be constructed through refinement rather than redesign.
 
-### Separation of movement and policy
+### Generality of the Movement Model
 
-This observation highlights a key modelling principle: movement semantics and safety policies should be separated.
+Although the model has been developed with railway systems in mind, its core structure does not rely on assumptions that are specific to rail transport. In particular, the definitions of infrastructure, movement, and agent evolution are independent of any particular safety or signalling regime.
 
-* The movement model captures what is physically possible.
-* Safety constraints capture what is operationally permitted.
+This becomes apparent when examining which assumptions are encoded directly in the model and which are introduced separately.
 
-In railway systems, the policy enforces strict exclusivity.
-In highway systems, the policy is weaker, allowing shared occupancy while relying on other mechanisms (e.g., speed limits, braking distances, driver behaviour) to avoid collisions.
+At the structural level, the model consists of:
 
-By isolating exclusivity into a separate consistency predicate, the model allows these different interpretations to coexist without modifying the underlying dynamics.
+- a fixed network of resources connected by transitions,
 
-#### Implications for extensibility
+- agents whose positions evolve over time subject to adjacency constraints,
 
-This separation has important consequences:
+- a discrete state-transition structure that records successive configurations.
 
-1. Reuse:
-   The same core model can support multiple transportation domains by varying only the interaction constraints.
+These components capture basic properties of agents moving on constrained infrastructure: locality of motion, continuity with respect to the network topology, and well-defined configurations at each time step. None of them impose restrictions on how many agents may occupy a given resource simultaneously, nor do they encode railway-specific concepts such as signalling blocks or interlocking logic.
 
-2. Refinement:
-   More sophisticated policies, such as lane-based separation and headway constraints can be added incrementally without redefining movement.
+The distinction between railway systems and other transportation systems therefore does not arise from the movement semantics themselves, but from additional constraints placed on joint configurations.
 
-3. Clarity:
-   Domain-specific assumptions become explicit rather than implicit, making the model easier to reason about and compare.
+#### Exclusivity as an Interaction Constraint
 
-In particular, the railway interpretation can be seen as a specialisation of a more general multi-agent movement model on graphs, obtained by strengthening the interaction constraints.
+In classical railway operation, infrastructure resources are treated as exclusive. Track segments and stations are protected so that at most one train may occupy a given resource at any time, and safety is enforced by ensuring that this exclusivity is never violated.
 
-### Citations
+Within the present framework, this requirement appears naturally as a constraint on global states: configurations in which two agents occupy the same resource are ruled out. Importantly, this constraint is imposed independently of the movement semantics. Individual agents continue to evolve according to the same local rules; only certain combinations of their positions are disallowed.
 
-[1]: https://link.springer.com/article/10.1007/s10270-025-01276-3 "Models for formal methods and tools: the case of railway ..."
-[2]: https://en.wikipedia.org/wiki/RailTopoModel "RailTopoModel"
-[3]: https://en.wikipedia.org/wiki/Kripke_structure_%28model_checking%29 "Kripke structure (model checking)"
-[4]: https://en.wikipedia.org/wiki/DEVS "DEVS"
-[5]: https://en.wikipedia.org/wiki/Automatic_block_signaling "Automatic block signaling"
-[6]: https://dl.acm.org/doi/full/10.1145/3520480 "Formal Methods in Railways: A Systematic Mapping Study"
-[7]: https://iris.cnr.it/bitstream/20.500.14243/538919/5/terBeek_SoSyM_2025.pdf "Models for formal methods and tools: the case of railway ..."
+This separation makes clear that exclusivity is not a property of motion itself, but of how multiple agents are permitted to coexist on the infrastructure.
+
+#### Alternative Interpretations
+
+If the exclusivity constraint is removed, the remaining structure still describes agents moving locally on a network over time. Positions evolve along transitions, configurations are well-defined at each step, and trajectories remain continuous with respect to the topology.
+
+Such behaviour is incompatible with traditional railway safety assumptions, but it corresponds naturally to road traffic systems. Under this interpretation:
+
+- resources correspond to road segments or intersections,
+
+- multiple agents may occupy the same resource,
+
+- motion is governed by the same adjacency rules.
+
+Collision avoidance and spacing are no longer enforced structurally, but are deferred to other mechanisms that lie outside the scope of the present model.
+
+From this perspective, railway systems can be understood as a special case obtained by strengthening the interaction constraints imposed on an otherwise general movement model.
+
+#### Movement and Policy
+
+This observation reflects a broader modelling principle: movement semantics and operational policy are best treated separately.
+
+The movement semantics describe which changes of position are physically admissible given the infrastructure. Interaction policies describe which joint configurations are acceptable given safety or operational requirements. By isolating these concerns, the model allows different interpretations to be obtained without modifying the underlying dynamics. This separation has several consequences.
+
+First, the same core structure can be reused across transportation domains by varying only the constraints imposed on global states.
+
+Second, additional policies, such as lane-based separation, headway constraints, or priority rules, can be introduced incrementally as refinements, without redefining the movement model.
+
+Finally, domain-specific assumptions remain explicit. The distinction between railway and non-railway systems is expressed as a difference in interaction constraints rather than being embedded implicitly in the structure of motion.
+
+In this sense, the railway interpretation emerges as a specialisation of a more general multi-agent movement model on graphs, obtained by strengthening the conditions under which agents may jointly occupy the infrastructure.
