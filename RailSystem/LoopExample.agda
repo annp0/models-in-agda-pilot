@@ -3,7 +3,7 @@
 
 module LoopExample where
 
-open import RailSystemInfra
+open import RailSystem
 open import Data.Nat using (ℕ ; zero ; suc)
 open import Data.Sum using (_⊎_ ; inj₁ ; inj₂)
 open import Data.Fin using (Fin) renaming (zero to fzero ; suc to fsuc)
