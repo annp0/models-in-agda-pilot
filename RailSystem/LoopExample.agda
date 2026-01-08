@@ -170,3 +170,6 @@ inj₂-injective-Loop refl = refl
 pairwiseLoop : (n : ℕ) → Pairwise-consistent train₀ train₁ n
 pairwiseLoop n eq =
   orbitFrom-offset2≢ n (inj₂-injective-Loop eq)
+
+
+-- NEXT EXAMPLE
