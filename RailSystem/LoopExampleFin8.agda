@@ -13,7 +13,7 @@ open Eq using (_≡_ ; _≢_ ; refl ; cong ; sym ; trans)
 open import Relation.Nullary using (¬_)
 
 LoopPosition : Set
-LoopPosition = Fin 1000
+LoopPosition = Fin 100000
 
 data Even : ℕ → Set where
     ezero : Even zero 
@@ -29,18 +29,18 @@ data IsTrack : LoopPosition → Set where
     isstation : ∀ {p} → Odd (toℕ p) → IsTrack p
 
 data IsLast : LoopPosition → Set where
-    islast : ∀ {p} → toℕ p ≡ 999 → IsLast p
+    islast : ∀ {p} → toℕ p ≡ 99999 → IsLast p
 
 isLast? : (p : LoopPosition) → Dec (IsLast p)
-isLast? p with toℕ p ≟ 999
+isLast? p with toℕ p ≟ 99999
 ... | yes prf = yes (islast prf)
 ... | no ¬prf = no λ { (islast eq) → ¬prf eq }
 
-help : ∀ {p : LoopPosition} → (toℕ p ≢ 999) → toℕ (fsuc p) < 1000
+help : ∀ {p : LoopPosition} → (toℕ p ≢ 99999) → toℕ (fsuc p) < 100000
 help {p} ¬eq = ≤∧≢⇒< (toℕ<n p) (λ eq → ¬eq (cong pred eq))
 
 next : LoopPosition → LoopPosition
-next p with toℕ p ≟ 999
+next p with toℕ p ≟ 99999
 ... | yes _ = fzero
 ... | no ¬eq = fromℕ< (help {p} ¬eq)
 
@@ -50,7 +50,7 @@ zero≢suc ()
 -- next is injective: if next x ≡ next y then x ≡ y
 -- proof by case split on whether x or y are the last element (7).
 next-inj : ∀ {x y : LoopPosition} → next x ≡ next y → x ≡ y
-next-inj {x} {y} eq with toℕ x ≟ 999 | toℕ y ≟ 999
+next-inj {x} {y} eq with toℕ x ≟ 99999 | toℕ y ≟ 99999
 ... | yes p1 | yes p2 = toℕ-injective (trans p1 (sym p2))
 ... | yes xeq7 | no ¬yeq7 = ⊥-elim (zero≢suc (cong toℕ eq)) 
 ... | no ¬eq7x | yes _ = ⊥-elim (zero≢suc (cong toℕ (sym eq))) 
