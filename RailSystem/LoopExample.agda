@@ -3,7 +3,7 @@
 
 module LoopExample where
 
-open import RailSystemInfra
+open import RailSystem
 open import Data.Nat using (ℕ ; zero ; suc)
 open import Data.Sum using (_⊎_ ; inj₁ ; inj₂)
 open import Data.Fin using (Fin) renaming (zero to fzero ; suc to fsuc)
@@ -170,3 +170,6 @@ inj₂-injective-Loop refl = refl
 pairwiseLoop : (n : ℕ) → Pairwise-consistent train₀ train₁ n
 pairwiseLoop n eq =
   orbitFrom-offset2≢ n (inj₂-injective-Loop eq)
+
+
+-- NEXT EXAMPLE
